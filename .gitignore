@@ -1,0 +1,30 @@
+# Model files (too large for git)
+models/
+*.gguf
+
+# llama.cpp subproject (cloned separately)
+llama.cpp/
+
+# Build artifacts
+build/
+*.o
+*.so
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test outputs (regenerated)
+/tmp/
+*.log
