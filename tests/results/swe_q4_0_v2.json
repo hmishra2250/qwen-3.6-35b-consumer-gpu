@@ -1,0 +1,107 @@
+[
+  {
+    "id": "C01_range_sum",
+    "name": "Count of Range Sum (Merge Sort)",
+    "tokens": 16384,
+    "elapsed": 421.7425446510315,
+    "has_answer": false,
+    "passed": false,
+    "output": "All tokens consumed by thinking",
+    "content": "",
+    "reasoning_preview": "The user wants a Python function `count_range_sum` that counts the number of range sums $S(i, j)$ such that $lower \\le S(i, j) \\le upper$.\nThe constraints are:\n- Input: `nums` (list of integers), `lower` (int), `upper` (int).\n- Output: integer count.\n- Complexity: $O(n \\log n)$.\n- Method: Prefix sums + modified merge sort.\n\nLet $P$ be the prefix sum array where $P[k] = \\sum_{m=0}^{k-1} nums[m]$ for $k > 0$, and $P[0] = 0$.\nThen the range sum $S(i, j) = P[j+1] - P[i]$.\nWe need to count pairs $(i,"
+  },
+  {
+    "id": "C02_burst_balloons",
+    "name": "Burst Balloons (Interval DP)",
+    "tokens": 3847,
+    "elapsed": 101.97704768180847,
+    "has_answer": true,
+    "passed": true,
+    "output": "PASS\n",
+    "content": "def max_coins(nums: list[int]) -> int:\n    if not nums:\n        return 0\n    n = len(nums)\n    A = [1] + nums + [1]\n    dp = [[0] * (n + 2) for _ in range(n + 2)]\n    \n    for length in range(1, n + 1):\n        for i in range(1, n - length + 2):\n            j = i + length - 1\n            for k in range(i, j + 1):\n                dp[i][j] = max(dp[i][j], dp[i][k-1] + dp[k+1][j] + A[i-1] * A[k] * A[j+1])\n                \n    return dp[1][n]"
+  },
+  {
+    "id": "C03_matrix_fib_pisano",
+    "name": "Matrix Fibonacci + Pisano Period",
+    "tokens": 16384,
+    "elapsed": 485.7802429199219,
+    "has_answer": false,
+    "passed": false,
+    "output": "All tokens consumed by thinking",
+    "content": "",
+    "reasoning_preview": "Here's a thinking process that leads to the suggested implementation:\n\n1.  **Analyze the Request:**\n    *   **Goal:** Implement four specific Python functions: `matrix_mult`, `matrix_power`, `fibonacci`, and `pisano_period`.\n    *   **Constraints:**\n        *   No `numpy` (pure Python).\n        *   `matrix_power` must use fast exponentiation (binary exponentiation) and call `matrix_mult`.\n        *   `fibonacci` must use `matrix_power` with the specific matrix $\\begin{pmatrix} 1 & 1 \\\\ 1 & 0 \\en"
+  },
+  {
+    "id": "C04_tree_serialize",
+    "name": "Serialize/Deserialize Binary Tree",
+    "tokens": 16384,
+    "elapsed": 483.4604969024658,
+    "has_answer": false,
+    "passed": false,
+    "output": "All tokens consumed by thinking",
+    "content": "",
+    "reasoning_preview": "Here's a thinking process that leads to the suggested implementation:\n\n1.  **Understand the Goal:** The objective is to implement `serialize` and `deserialize` functions for a binary tree. The constraints are strict:\n    *   Node values can contain *any* character (special characters, newlines, null bytes, etc.).\n    *   Must handle large trees (5000+ nodes) without recursion limit errors (iterative approach required).\n    *   Must handle empty trees (`None`).\n    *   Round-trip consistency is r"
+  },
+  {
+    "id": "C05_topo_sort",
+    "name": "All Topological Sorts + Longest Path",
+    "tokens": 7316,
+    "elapsed": 206.8138976097107,
+    "has_answer": true,
+    "passed": true,
+    "output": "PASS\n",
+    "content": "class DirectedGraph:\n    def __init__(self, n: int):\n        self.n = n\n        self.adj = [[] for _ in range(n)]\n        self.in_degree = [0] * n\n\n    def add_edge(self, u: int, v: int) -> None:\n        self.adj[u].append(v)\n        self.in_degree[v] += 1\n\n    def has_cycle(self) -> bool:\n        in_deg = self.in_degree[:]\n        queue = [i for i in range(self.n) if in_deg[i] == 0]\n        count = 0\n        while queue:\n            u = queue.pop(0)\n            count += 1\n            for v in self.adj[u]:\n                in_deg[v] -= 1\n                if in_deg[v] == 0:\n                    queue.append(v)\n        return count < self.n\n\n    def topological_sort(self) -> list[int] | None:\n        if self.has_cycle():\n            return None\n        in_deg = self.in_degree[:]\n        queue = [i for i in range(self.n) if in_deg[i] == 0]\n        order = []\n        while queue:\n            u = queue.pop(0)\n            order.append(u)\n            for v in self.adj[u]:\n                in_deg[v] -= 1\n                if in_deg[v] == 0:\n                    queue.append(v)\n        return order\n\n    def all_topological_sorts(self) -> list[list[int]]:\n        if self.has_cycle():\n            return []\n        \n        results = []\n        in_deg = self.in_degree[:]\n        path = []\n        \n        def backtrack():\n            if len(path) == self.n:\n                results.append(path[:])\n                return\n            for i in range(self.n):\n                if in_deg[i] == 0:\n                    path.append(i)\n                    in_deg[i] = -1\n                    for v in self.adj[i]:\n                        in_deg[v] -= 1\n                    backtrack()\n                    for v in self.adj[i]:\n                        in_deg[v] += 1\n                    in_deg[i] = 0\n                    path.pop()\n                    \n        backtrack()\n        return results\n\n    def longest_path(self) -> int:\n        if self.has_cycle():\n            return -1\n        \n        topo = self.topological_sort()\n        dist = [0] * self.n\n        max_len = 0\n        \n        for u in topo:\n            for v in self.adj[u]:\n                if dist[u] + 1 > dist[v]:\n                    dist[v] = dist[u] + 1\n                    if dist[v] > max_len:\n                        max_len = dist[v]\n                        \n        return max_len"
+  },
+  {
+    "id": "C06_calendar",
+    "name": "Calendar Interval Merging with Priority",
+    "tokens": 12536,
+    "elapsed": 360.2651107311249,
+    "has_answer": true,
+    "passed": false,
+    "output": "Traceback (most recent call last):\n  File \"/tmp/tmpdp54i3dk.py\", line 140, in <module>\n    assert cal2.free_slots(0, 500, min_duration=150) == [(200, 300)]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
+    "content": "from dataclasses import dataclass\nfrom typing import Any, Optional\n\n@dataclass\nclass Event:\n    start: float\n    end: float\n    title: str\n    priority: int  # higher = more important\n\nclass Calendar:\n    def __init__(self):\n        self.events: list[Event] = []\n\n    def add_event(self, event: Event) -> list[Event]:\n        if event.start >= event.end:\n            raise ValueError(\"Start must be less than end\")\n            \n        overlaps = [e for e in self.events if e.start < event.end and e.end > event.start]\n        if not overlaps:\n            self.events.append(event)\n            return []\n            \n        overlaps.sort(key=lambda e: e.start)\n        \n        returned = []\n        new_fragments = []\n        \n        # Higher priority new event trims lower priority existing\n        for existing in [e for e in overlaps if e.priority < event.priority]:\n            if event.start <= existing.start and event.end >= existing.end:\n                self.events.remove(existing)\n                returned.append(existing)\n            elif event.start <= existing.start:\n                existing.start = event.end\n                returned.append(existing)\n            elif event.end >= existing.end:\n                existing.end = event.start\n                returned.append(existing)\n            else:\n                old_start, old_end = existing.start, existing.end\n                existing.start = event.end\n                returned.append(Event(old_start, event.start, existing.title, existing.priority))\n                returned.append(existing)\n                \n        # Lower/equal priority new event is trimmed around higher/equal existing\n        curr_start = event.start\n        for existing in [e for e in overlaps if e.priority >= event.priority]:\n            if curr_start >= existing.end:\n                continue\n            if curr_start < existing.start:\n                new_fragments.append(Event(curr_start, existing.start, event.title, event.priority))\n            curr_start = max(curr_start, existing.end)\n            \n        if curr_start < event.end:\n            new_fragments.append(Event(curr_start, event.end, event.title, event.priority))\n            \n        if new_fragments:\n            self.events.extend(new_fragments)\n            return new_fragments\n        else:\n            self.events.append(event)\n            return returned\n\n    def get_events(self, start: float, end: float) -> list[Event]:\n        return sorted(\n            [e for e in self.events if e.start < end and e.end > start],\n            key=lambda e: e.start\n        )\n\n    def free_slots(self, start: float, end: float, min_duration: float = 0) -> list[tuple[float, float]]:\n        occupied = []\n        for e in self.events:\n            if e.start < end and e.end > start:\n                occupied.append((max(e.start, start), min(e.end, end)))\n        occupied.sort()\n        \n        merged = []\n        for occ in occupied:\n            if merged and occ[0] < merged[-1][1]:\n                merged[-1] = (merged[-1][0], max(merged[-1][1], occ[1]))\n            else:\n                merged.append(list(occ))\n                \n        slots = []\n        curr = start\n        for occ_start, occ_end in merged:\n            if curr < occ_start:\n                if occ_start - curr >= min_duration:\n                    slots.append((curr, occ_start))\n            curr = max(curr, occ_end)\n        if curr < end:\n            if end - curr >= min_duration:\n                slots.append((curr, end))\n        return slots\n\n    def utilization(self, start: float, end: float) -> float:\n        if start >= end:\n            return 0.0\n        occupied = []\n        for e in self.events:\n            if e.start < end and e.end > start:\n                occupied.append((max(e.start, start), min(e.end, end)))\n        occupied.sort()\n        \n        total_occ = 0.0\n        curr_end = start\n        for occ_start, occ_end in occupied:\n            if occ_start < curr_end:\n                curr_end = max(curr_end, occ_end)\n            else:\n                total_occ += curr_end - start\n                curr_end = occ_end\n                start = occ_start\n        total_occ += curr_end - start\n        return total_occ / (end - start)"
+  },
+  {
+    "id": "C07_regex",
+    "name": "Mini Regex Engine",
+    "tokens": 15134,
+    "elapsed": 440.1535460948944,
+    "has_answer": true,
+    "passed": false,
+    "output": "Traceback (most recent call last):\n  File \"/tmp/tmpboo10ram.py\", line 149, in <module>\n    assert regex_match(\"a.c\", \"ac\") == False\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
+    "content": "def regex_match(pattern: str, text: str) -> bool:\n    nfa = [{'trans': {}, 'eps': []}]\n    def new_state():\n        nfa.append({'trans': {}, 'eps': []})\n        return len(nfa) - 1\n\n    def add_trans(s, c, t):\n        nfa[s]['trans'].setdefault(c, []).append(t)\n\n    def add_eps(s, t):\n        nfa[s]['eps'].append(t)\n\n    pos = 0\n    n = len(pattern)\n\n    def parse_concat():\n        start = new_state()\n        curr = start\n        while pos < n and pattern[pos] not in '|)':\n            frag = parse_atom()\n            add_eps(curr, frag[0])\n            curr = frag[1]\n        return (start, curr)\n\n    def parse_atom():\n        nonlocal pos\n        if pos >= n:\n            return (new_state(), new_state())\n        ch = pattern[pos]\n        if ch == '(':\n            pos += 1\n            frag = parse_concat()\n            if pos < n and pattern[pos] == ')':\n                pos += 1\n            return frag\n        elif ch == '[':\n            pos += 1\n            neg = False\n            if pos < n and pattern[pos] == '^':\n                neg = True\n                pos += 1\n            chars = set()\n            while pos < n and pattern[pos] != ']':\n                if pos + 2 < n and pattern[pos+1] == '-' and pattern[pos+2] != ']':\n                    for c in range(ord(pattern[pos]), ord(pattern[pos+2])+1):\n                        chars.add(chr(c))\n                    pos += 3\n                else:\n                    chars.add(pattern[pos])\n                    pos += 1\n            if pos < n:\n                pos += 1\n            s = new_state()\n            e = new_state()\n            if neg:\n                nfa[s]['neg'] = chars\n                add_eps(s, e)\n            else:\n                for c in chars:\n                    add_trans(s, c, e)\n            return (s, e)\n        elif ch == '.':\n            pos += 1\n            s = new_state()\n            e = new_state()\n            nfa[s]['any'] = True\n            add_eps(s, e)\n            return (s, e)\n        elif ch == '\\\\':\n            pos += 1\n            if pos < n:\n                esc = pattern[pos]\n                pos += 1\n                s = new_state()\n                e = new_state()\n                nfa[s]['esc'] = esc\n                add_eps(s, e)\n                return (s, e)\n        else:\n            pos += 1\n            s = new_state()\n            e = new_state()\n            add_trans(s, ch, e)\n            return (s, e)\n\n        if pos < n and pattern[pos] in '*+?':\n            q = pattern[pos]\n            pos += 1\n            if q == '*':\n                new_end = new_state()\n                add_eps(frag[1], frag[0])\n                add_eps(frag[1], new_end)\n                frag = (frag[0], new_end)\n            elif q == '+':\n                new_end = new_state()\n                add_eps(frag[1], frag[0])\n                add_eps(frag[1], new_end)\n                frag = (frag[0], new_end)\n                nfa[frag[0]]['plus'] = True\n            elif q == '?':\n                new_end = new_state()\n                add_eps(frag[0], new_end)\n                add_eps(frag[1], new_end)\n                frag = (frag[0], new_end)\n            frag = (*frag, q)\n            return frag\n        return (*frag, None)\n\n    frag = parse_concat()\n    start_state = frag[0]\n    end_state = frag[1]\n    current_states = {start_state}\n\n    def epsilon_closure(states):\n        stack = list(states)\n        closure = set(states)\n        while stack:\n            s = stack.pop()\n            for t in nfa[s]['eps']:\n                if t not in closure:\n                    closure.add(t)\n                    stack.append(t)\n        return closure\n\n    current_states = epsilon_closure(current_states)\n    for char in text:\n        next_states = set()\n        for s in current_states:\n            for c, targets in nfa[s]['trans'].items():\n                if c == char:\n                    next_states.update(targets)\n            if nfa[s].get('any'):\n                next_states.update(nfa[s]['eps'])\n            if 'neg' in nfa[s]:\n                if char not in nfa[s]['neg']:\n                    next_states.update(nfa[s]['eps'])\n            if 'esc' in nfa[s]:\n                if char == nfa[s]['esc']:\n                    next_states.update(nfa[s]['eps'])\n            if nfa[s].get('plus'):\n                next_states.update(nfa[s]['eps'])\n        current_states = epsilon_closure(next_states)\n    return end_state in current_states"
+  },
+  {
+    "id": "C08_consistent_hash",
+    "name": "Consistent Hash Ring",
+    "tokens": 14692,
+    "elapsed": 414.04443645477295,
+    "has_answer": true,
+    "passed": true,
+    "output": "PASS\n",
+    "content": "```python\nimport hashlib\nimport bisect\n\nclass ConsistentHashRing:\n    def __init__(self, num_virtual_nodes: int = 150):\n        self.num_virtual_nodes = num_virtual_nodes\n        self.ring = []  # Sorted list of (hash, vnode_name)\n        self.virtual_to_physical = {}  # vnode_name -> node_id\n        self.physical_nodes = set()  # Set of active node_ids\n\n    def _hash(self, s: str) -> int:\n        return int(hashlib.md5(s.encode()).hexdigest(), 16)\n\n    def add_node(self, node_id: str) -> None:\n        if node_id in self.physical_nodes:\n            return\n        self.physical_nodes.add(node_id)\n        for i in range(self.num_virtual_nodes):\n            vnode = f\"{node_id}#v{i}\"\n            h = self._hash(vnode)\n            self.virtual_to_physical[vnode] = node_id\n            bisect.insort(self.ring, (h, vnode))\n\n    def remove_node(self, node_id: str) -> None:\n        if node_id not in self.physical_nodes:\n            raise KeyError(node_id)\n        \n        self.physical_nodes.remove(node_id)\n        \n        # Identify virtual nodes to remove\n        vnodes_to_remove = {f\"{node_id}#v{i}\" for i in range(self.num_virtual_nodes)}\n        \n        # Filter ring and clean mapping\n        new_ring = []\n        for h, vnode in self.ring:\n            if vnode not in vnodes_to_remove:\n                new_ring.append((h, vnode))\n            else:\n                del self.virtual_to_physical[vnode]\n        self.ring = new_ring\n\n    def get_node(self, key: str) -> str | None:\n        if not self.physical_nodes:\n            return None\n        \n        h = self._hash(key)\n        # bisect_left finds the first element >= (h, \"\")\n        # Since \"\" is lexicographically smaller than any vnode name,\n        # this effectively finds the first vnode with hash >= h.\n        idx = bisect.bisect_left(self.ring, (h, \"\"))\n        \n        if idx == len(self.ring):\n            idx = 0\n            \n        vnode = self.ring[idx][1]\n        return self.virtual_to_physical[vnode]\n\n    def get_nodes_for_key(self, key: str, num_replicas: int = 3) -> list[str]:\n        if not self.physical_nodes or num_replicas <= 0:\n            return []\n        \n        h = self._hash(key)\n        idx = bisect.bisect_left(self.ring, (h, \"\"))\n        if idx == len(self.ring):\n            idx = 0\n            \n        n = len(self.ring)\n        result = []\n        seen = set()\n        \n        # Traverse clockwise starting from the found index\n        for i in range(n):\n            current_idx = (idx + i) % n\n            vnode = self.ring[current_idx][1]\n            node_id = self.virtual_to_physical[vnode]\n            \n            if node_id not in seen:\n                seen.add(node_id)\n                result.append(node_id)\n                if len(result) == num_replicas:\n                    break\n                    \n        return result\n```"
+  },
+  {
+    "id": "C09_async_bugs",
+    "name": "Find & Fix Async Queue Bugs",
+    "tokens": 16384,
+    "elapsed": 459.34464144706726,
+    "has_answer": false,
+    "passed": false,
+    "output": "All tokens consumed by thinking",
+    "content": "",
+    "reasoning_preview": "Here's a thinking process that leads to the suggested solution:\n\n1.  **Analyze the Request:**\n    *   **Input:** A Python script using `asyncio` implementing a custom bounded queue (`AsyncBoundedQueue`) and a producer-consumer pattern.\n    *   **Constraint:** The code has *at least* 4 bugs.\n    *   **Task:** Find *all* bugs, explain them, and provide the complete corrected code.\n    *   **Goal:** The corrected code must run and pass the assertion `assert len(results) == 20`.\n\n2.  **Code Walkthro"
+  },
+  {
+    "id": "C10_lru_ttl",
+    "name": "LRU Cache with TTL",
+    "tokens": 16384,
+    "elapsed": 455.9203152656555,
+    "has_answer": false,
+    "passed": false,
+    "output": "All tokens consumed by thinking",
+    "content": "",
+    "reasoning_preview": "The user wants a thread-safe LRU cache with time-based expiration (TTL).\nThe class should be named `TTLCache`.\nIt needs to support `get`, `put`, `cleanup`, and `size` methods.\nConstraints:\n- O(1) operations for get/put.\n- Thread-safe using `threading.Lock`.\n- Use `time.monotonic()` for time tracking.\n- Lazy expiry on access + explicit `cleanup()`.\n- `size()` must not count expired entries.\n- Return only the Python class, no explanation.\n- Include imports.\n\nImplementation details:\n- Use `collecti"
+  }
+]

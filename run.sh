@@ -11,6 +11,7 @@ CTX=${CTX:-131072}
 KV_TYPE=${KV_TYPE:-q4_0}
 THREADS=${THREADS:-16}
 PORT=${PORT:-8080}
+REASONING_BUDGET=${REASONING_BUDGET:-4096}
 
 if [ ! -f "$MODEL" ]; then
     echo "ERROR: Model not found at $MODEL"
@@ -19,7 +20,7 @@ if [ ! -f "$MODEL" ]; then
 fi
 
 echo "=== Qwen3.6-35B-A3B Server ==="
-echo "  ncmoe: $NCMOE | ctx: $CTX | kv: $KV_TYPE | threads: $THREADS | port: $PORT"
+echo "  ncmoe: $NCMOE | ctx: $CTX | kv: $KV_TYPE | threads: $THREADS | port: $PORT | reasoning_budget: $REASONING_BUDGET"
 echo "  Model: $(basename $MODEL)"
 echo ""
 
@@ -34,5 +35,6 @@ exec "$LLAMA_SERVER" \
     -np 1 \
     -t "$THREADS" \
     --no-mmap \
+    --reasoning-budget "$REASONING_BUDGET" \
     --host 127.0.0.1 \
     --port "$PORT"
