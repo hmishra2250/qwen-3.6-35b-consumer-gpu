@@ -6,10 +6,10 @@ Running a 35B-parameter MoE model on a laptop GPU (RTX 4070 Max-Q, 8GB VRAM) wit
 
 | Config | Score | Context | Speed | VRAM | Notes |
 |--------|:-----:|---------|-------|------|-------|
-| **IQ4_XS + /no_think** (best) | **8/10** | 128K | ~10-15 t/s | 5.7 GB + RAM | 1 point from cloud Gemma |
+| **IQ4_XS + /no_think** (best) | **9/10** | 128K | ~10-15 t/s | 5.7 GB + RAM | 1 point from cloud Gemma |
 | IQ4_XS + thinking | 7/10 | 128K | ~10-15 t/s | 5.7 GB + RAM | Better on complex reasoning |
 | IQ3_XXS (original) | 5/10 | 128K | ~10-17 t/s | 3.8 GB + RAM | Below 4-bit threshold |
-| gemma-4-31b-it (cloud API) | 9/10 | -- | -- | -- | Cloud baseline for comparison |
+| gemma-4-31b-it (cloud API) | 10/10 | -- | -- | -- | Cloud baseline for comparison |
 
 Tested on 10 hard SWE coding challenges (algorithms, data structures, concurrency, system design) with temperature=0.6 and up to 2 retries per challenge.
 
@@ -56,7 +56,7 @@ hf download unsloth/Qwen3.6-35B-A3B-GGUF Qwen3.6-35B-A3B-UD-IQ4_XS.gguf --local-
 ./run-iq4xs.sh
 ```
 
-- 7/10 on SWE challenges, up from 5/10 on IQ3_XXS
+- 9/10 on SWE challenges with /no_think (7/10 with thinking), up from 5/10 on IQ3_XXS
 - Above the 4-bit reliability threshold for reasoning tasks
 - Fits 8 GB VRAM + 16 GB RAM with `--n-cpu-moe 30`
 - Asymmetric KV cache protects the more sensitive value cache
@@ -127,12 +127,12 @@ cmake -B build \
 | C03 | Matrix Fibonacci + Pisano | PASS | PASS | PASS | PASS |
 | C04 | Tree Serialize/Deserialize | FAIL | PASS | FAIL | PASS |
 | C05 | All Topological Sorts | PASS | PASS | PASS | PASS |
-| C06 | Calendar Interval Merging | FAIL | FAIL | FAIL | FAIL |
+| C06 | Calendar Interval Merging | PASS | FAIL | FAIL | PASS |
 | C07 | Mini Regex Engine | PASS | FAIL | FAIL | PASS |
 | C08 | Consistent Hash Ring | PASS | PASS | FAIL | PASS |
 | C09 | Async Queue Bugs | PASS | FAIL | FAIL | PASS |
 | C10 | LRU Cache with TTL | PASS | PASS | PASS | PASS |
-| | **Total** | **8/10** | 7/10 | 5/10 | **9/10** |
+| | **Total** | **9/10** | 7/10 | 5/10 | **10/10** |
 
 ## Configuration Profiles
 
@@ -170,7 +170,7 @@ The key insight is that Qwen3.6-35B-A3B is not a standard transformer. Its hybri
 1. **MoE sparsity** (only 3B of 35B params active per token) lets you offload most weights to CPU
 2. **Hybrid attention** (only 10/40 layers use KV cache) makes aggressive KV quantization far less impactful
 
-Combining these on consumer hardware hits a sweet spot where a $1,500 laptop runs a 35B model that would normally need 80GB+ of VRAM, at 128K context, scoring 8/10 on hard coding challenges -- one point from cloud-served Gemma 4 31B.
+Combining these on consumer hardware hits a sweet spot where a $1,500 laptop runs a 35B model that would normally need 80GB+ of VRAM, at 128K context, scoring 9/10 on hard coding challenges -- one point from cloud-served Gemma 4 31B at full precision.
 
 ## License
 

@@ -300,16 +300,16 @@ CHALLENGES = [
             fragments = cal.add_event(Event(140, 360, "D", 1))
             assert fragments == [] or all(f.end - f.start <= 0 for f in fragments), f"D should be empty: {fragments}"
 
-            # Free slots
+            # Free slots (asymmetric gaps: 50, 200, 100)
             cal2 = Calendar()
-            cal2.add_event(Event(100, 200, "X", 1))
-            cal2.add_event(Event(300, 400, "Y", 1))
+            cal2.add_event(Event(50, 150, "X", 1))
+            cal2.add_event(Event(350, 400, "Y", 1))
             free = cal2.free_slots(0, 500)
-            assert free == [(0, 100), (200, 300), (400, 500)], f"Got {free}"
-            assert cal2.free_slots(0, 500, min_duration=150) == [(200, 300)]
+            assert free == [(0, 50), (150, 350), (400, 500)], f"Got {free}"
+            assert cal2.free_slots(0, 500, min_duration=150) == [(150, 350)]
 
             # Utilization
-            assert abs(cal2.utilization(0, 500) - 0.4) < 0.001
+            assert abs(cal2.utilization(0, 500) - 0.3) < 0.001
 
             # Higher priority splits existing
             cal4 = Calendar()
@@ -790,12 +790,20 @@ def main():
     label = sys.argv[1] if len(sys.argv) > 1 else "test"
     results = []
 
+    challenge_filter = os.environ.get("FILTER", "").strip()
+    challenges = CHALLENGES
+    if challenge_filter:
+        challenges = [c for c in CHALLENGES if challenge_filter.lower() in c["id"].lower()]
+        if not challenges:
+            log(f"No challenges match filter '{challenge_filter}'")
+            return 0, 0
+
     log(f"=== SWE Challenge Suite: {label} ===")
-    log(f"Running {len(CHALLENGES)} challenges\n")
+    log(f"Running {len(challenges)} challenges\n")
 
     max_retries = int(os.environ.get("MAX_RETRIES", "3"))
 
-    for i, ch in enumerate(CHALLENGES):
+    for i, ch in enumerate(challenges):
         log(f"[{i+1}/{len(CHALLENGES)}] {ch['name']}...")
 
         best_result = None

@@ -104,13 +104,13 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
   </div>
   <div class="card">
     <h4>Our Best Local Setup</h4>
-    <p class="score" style="color:var(--green)">8/10</p>
-    <p>SWE coding challenges on IQ4_XS + <code>/no_think</code> + asymmetric KV. Up from 3/10 with wrong settings. Gemma 4 31B (cloud) scored 9/10. One point gap.</p>
+    <p class="score" style="color:var(--green)">9/10</p>
+    <p>SWE coding challenges on IQ4_XS + <code>/no_think</code> + asymmetric KV. Up from 3/10 with wrong settings. Gemma 4 31B (cloud) scored 10/10. One point gap.</p>
   </div>
 </div>
 
 <div class="highlight">
-  <strong>The central question of this investigation</strong> was whether a quantized 35B model on consumer hardware could approach cloud-served model quality. The answer is yes. Through a series of targeted improvements -- upgrading weights from IQ3_XXS to IQ4_XS, adding asymmetric KV cache, fixing inference settings, and disabling thinking for code tasks -- we moved from <strong>3/10 to 8/10</strong>, just one point behind cloud Gemma 31B (9/10). The only shared failure (C06) is universally unsolved across all models.
+  <strong>The central question of this investigation</strong> was whether a quantized 35B model on consumer hardware could approach cloud-served model quality. The answer is yes. Through a series of targeted improvements -- upgrading weights from IQ3_XXS to IQ4_XS, adding asymmetric KV cache, fixing inference settings, fixing a C06 test bug, and disabling thinking for code tasks -- we moved from <strong>3/10 to 9/10</strong>, just one point behind cloud Gemma 31B (10/10). The only remaining failure (C04: Tree Serialization) requires extended thinking, which is disabled in our best configuration.
 </div>
 
 <!-- ================================================================== -->
@@ -119,12 +119,12 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 <table>
 <tr><th>Component</th><th>Detail</th></tr>
 <tr><td>Model</td><td>Qwen3.6-35B-A3B (35B total, 3B active per token, MoE)</td></tr>
-<tr><td>Weight Quantization</td><td>IQ3_XXS via Unsloth (~13 GB on disk, ~6 GB VRAM with CPU offload)</td></tr>
-<tr><td>KV Cache Quantization</td><td>Q4_0 keys and values (only affects 10/40 layers due to hybrid DeltaNet architecture)</td></tr>
-<tr><td>Context Length</td><td>128K tokens (Q4_0 KV) / 64K tokens (q8_0 KV)</td></tr>
+<tr><td>Weight Quantization</td><td>IQ4_XS via Unsloth (~17 GB on disk, ~5.7 GB VRAM with CPU offload)</td></tr>
+<tr><td>KV Cache Quantization</td><td>Asymmetric: Q4_0 keys + Q8_0 values (only affects 10/40 layers due to hybrid DeltaNet architecture)</td></tr>
+<tr><td>Context Length</td><td>128K tokens</td></tr>
 <tr><td>GPU</td><td>NVIDIA RTX 4070 Max-Q, 8 GB VRAM</td></tr>
-<tr><td>CPU Offload</td><td><code>--n-cpu-moe 25</code> (MoE expert layers in system RAM)</td></tr>
-<tr><td>Runtime</td><td>llama.cpp (llama-server) with <code>GGML_CUDA_FA_ALL_QUANTS=ON</code></td></tr>
+<tr><td>CPU Offload</td><td><code>--n-cpu-moe 30</code> (MoE expert layers in system RAM)</td></tr>
+<tr><td>Runtime</td><td>llama.cpp (llama-server) with <code>GGML_CUDA_FA_ALL_QUANTS=ON</code>, jinja, preserve_thinking</td></tr>
 </table>
 
 <!-- ================================================================== -->
@@ -143,19 +143,19 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 <tr><td>C03</td><td>Matrix Fibonacci + Pisano</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td></tr>
 <tr><td>C04</td><td>Tree Serialize/Deserialize</td><td class="fail">FAIL</td><td class="pass">PASS</td><td class="fail">FAIL</td><td class="pass">PASS</td></tr>
 <tr><td>C05</td><td>All Topological Sorts</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td></tr>
-<tr><td>C06</td><td>Calendar Interval Merging</td><td class="fail">FAIL</td><td class="fail">FAIL</td><td class="fail">FAIL</td><td class="fail">FAIL</td></tr>
+<tr><td>C06</td><td>Calendar Interval Merging</td><td class="pass">PASS</td><td class="fail">FAIL</td><td class="fail">FAIL</td><td class="pass">PASS</td></tr>
 <tr><td>C07</td><td>Mini Regex Engine</td><td class="pass">PASS</td><td class="fail">FAIL</td><td class="fail">FAIL</td><td class="pass">PASS</td></tr>
 <tr><td>C08</td><td>Consistent Hash Ring</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="fail">FAIL</td><td class="pass">PASS</td></tr>
 <tr><td>C09</td><td>Async Queue Bugs</td><td class="pass">PASS</td><td class="fail">FAIL</td><td class="fail">FAIL</td><td class="pass">PASS</td></tr>
 <tr><td>C10</td><td>LRU Cache with TTL</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td></tr>
 <tr style="font-weight:700">
   <td></td><td>Total</td>
-  <td style="color:var(--green)">8/10</td><td>7/10</td><td>5/10</td>
-  <td style="color:var(--green)">9/10</td>
+  <td style="color:var(--green)">9/10</td><td>7/10</td><td>5/10</td>
+  <td style="color:var(--green)">10/10</td>
 </tr>
 </table>
 
-<p class="footnote">IQ4_XS /no_think: thinking disabled, code-only system prompt, asymmetric KV (Q4 keys + Q8 values), preserve_thinking, reasoning-budget-message, temp=0.6, 2 retries. IQ4_XS think: thinking enabled with budget=4096, same KV and temp. IQ3_XXS: best of Q4_0/q8_0 KV runs. Gemma 31b via Gemini API (cloud). All local runs on RTX 4070 8GB, 128K context.</p>
+<p class="footnote">IQ4_XS /no_think: thinking disabled, code-only system prompt, asymmetric KV (Q4 keys + Q8 values), preserve_thinking, reasoning-budget-message, temp=0.6, 2 retries. IQ4_XS think: thinking enabled with budget=4096, same KV and temp. IQ3_XXS: symmetric Q4_0 KV, thinking enabled. Gemma 31b via Gemini API (cloud). All local runs on RTX 4070 8GB, 128K context. C06 test bug fixed (original had incorrect min_duration assertion).</p>
 
 <h3>Full-Precision Benchmarks (Unquantized)</h3>
 
@@ -274,7 +274,7 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
   <cite>-- <a href="https://arxiv.org/html/2601.14277v1">Which Quantization Should I Use? A Unified Evaluation of llama.cpp Quantization</a></cite>
 </blockquote>
 
-<p>Our original setup used IQ3_XXS (approximately 3-bit), which sits below the 4-bit threshold. Upgrading to IQ4_XS improved SWE challenge scores from 5/10 to 7/10, directly confirming that weight quantization was the primary bottleneck:</p>
+<p>Our original setup used IQ3_XXS (approximately 3-bit), which sits below the 4-bit threshold. Upgrading to IQ4_XS improved SWE challenge scores from 5/10 to 9/10 (with /no_think mode), directly confirming that weight quantization was the primary bottleneck:</p>
 
 <table>
 <tr><th>Quantization</th><th>Estimated Quality Retention</th><th>KL Divergence (99.9%)</th></tr>
@@ -302,7 +302,7 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 
 <p>What makes our configuration particularly aggressive is that we stack two forms of quantization simultaneously: IQ3_XXS weights and Q4_0 KV cache. The research from WKVQuant cited above suggests these losses are roughly additive. On a standard transformer, that would mean absorbing both the weight quantization penalty (the larger factor) and the KV cache quantization penalty (the smaller but non-trivial factor). The hybrid architecture provides a partial shield against the KV component, but it does not protect against weight quantization at all.</p>
 
-<p>The practical improvement confirms this analysis: upgrading weights from IQ3_XXS to IQ4_XS (crossing the 4-bit threshold) improved scores from 5/10 to 7/10. Adding asymmetric KV cache (Q4 keys + Q8 values) and proper inference settings (temp=0.6, retries) delivered the final configuration, closing the gap with cloud-served Gemma 31b from 3 points to just 2 (7/10 vs 9/10).</p>
+<p>The practical improvement confirms this analysis: upgrading weights from IQ3_XXS to IQ4_XS (crossing the 4-bit threshold) improved scores from 5/10 to 7/10. Adding asymmetric KV cache (Q4 keys + Q8 values), proper inference settings (temp=0.6, retries), and <code>/no_think</code> mode for code generation delivered the final configuration, closing the gap with cloud-served Gemma 31b to just 1 point (9/10 vs 10/10).</p>
 
 <!-- ================================================================== -->
 <h2 id="pitfalls">6. Three Configuration Pitfalls and Their Fixes</h2>
@@ -454,9 +454,11 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 
 <p>This pattern is characteristic of quantized models: the high-level algorithm is correct, but fine-grained data structure consistency degrades. The model "knows" both the parser and the matcher, but the seam between them is where quantization-induced imprecision manifests.</p>
 
-<h3>C06: Calendar Interval Merging (Both FAIL)</h3>
+<h3>C06: Calendar Interval Merging (Test Bug Found and Fixed)</h3>
 
-<p>Both models fail on the same assertion. This is the only challenge that no model has ever passed across 10+ runs and 4 configurations. Both models implement logically sound priority resolution, but the test case for <code>free_slots(0, 500, min_duration=150)</code> expects <code>[(200, 300)]</code>, a gap that is only 100 units long, shorter than the <code>min_duration=150</code> filter. This warrants investigation into the test case itself.</p>
+<p>The original C06 test contained a bug: it asserted that <code>free_slots(0, 500, min_duration=150)</code> should return <code>[(200, 300)]</code>, but that slot is only 100 units long, which is less than the <code>min_duration=150</code> filter. Every model correctly implemented the filter and returned an empty list, but the test expected the wrong answer.</p>
+
+<p>After fixing the test to use asymmetric free slots (50, 200, and 100 units), the results diverge by mode: IQ4_XS <code>/no_think</code> and Gemma both pass on the first attempt, while IQ4_XS with thinking and IQ3_XXS both fail on the priority resolution logic. The thinking mode appears to overcomplicate the priority trimming, producing bugs in edge cases around higher-priority event insertion. Direct code generation handles this cleaner.</p>
 
 <h3>Cross-Cutting: Architectural Choices Under Quantization</h3>
 
@@ -565,7 +567,7 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
   <cite>-- <a href="https://openreview.net/forum?id=QhkW8xPH1v">OpenReview: Reliability Scaling Laws for Quantized LLMs</a></cite>
 </blockquote>
 
-<p>At IQ3_XXS, these concerns are well-founded. However, upgrading to IQ4_XS crosses the 4-bit threshold: SWE challenge scores improved from 5/10 to 7/10, and the model now handles challenges (C04 Tree Serialization, C08 Hash Ring) that IQ3_XXS consistently failed. For single-turn and short-context agent tasks, IQ4_XS is a credible option. For extended multi-turn agent loops, the remaining quantization impact and KV cache error accumulation may still be limiting factors.</p>
+<p>At IQ3_XXS, these concerns are well-founded. However, upgrading to IQ4_XS crosses the 4-bit threshold: SWE challenge scores improved from 5/10 to 9/10 (with /no_think mode), and the model now handles challenges (C06 Calendar, C07 Regex, C08 Hash Ring, C09 Async) that IQ3_XXS consistently failed. For single-turn and short-context agent tasks, IQ4_XS is a credible option. For extended multi-turn agent loops, the remaining quantization impact and KV cache error accumulation may still be limiting factors.</p>
 
 <h3>Practical Assessment</h3>
 
@@ -632,20 +634,20 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 <h2 id="verdict">12. Final Verdict</h2>
 
 <div class="verdict positive">
-  <h3 style="margin-top:0; color:var(--green)">8/10: One point from cloud Gemma, running on a laptop GPU.</h3>
-  <p>Qwen3.6-35B-A3B at IQ4_XS with <code>/no_think</code> mode scores 8/10 on hard SWE challenges, one point behind cloud-served Gemma 4 31B (9/10). The only shared failure (C06 Calendar Interval Merging) is universally unsolved across all models. This is a 35B-parameter model running on a laptop GPU with 128K context, delivering quality that was previously only available through cloud APIs.</p>
-  <p>The journey from 3/10 to 8/10 demonstrates that configuration matters as much as raw model capability. The five levers were: fixing inference settings (temp=0.6, reasoning budget), crossing the 4-bit weight quantization threshold (IQ3_XXS to IQ4_XS), using asymmetric KV cache (Q4 keys + Q8 values), disabling thinking for code generation tasks (<code>/no_think</code>), and adding retries for sampling variance.</p>
-  <p>One tradeoff emerged: C04 (Tree Serialization) passes with thinking enabled but fails with <code>/no_think</code>. The optimal strategy is task-dependent: use <code>/no_think</code> for straightforward code generation, enable thinking for complex reasoning tasks. A hybrid approach that selects the mode based on task type would achieve 9/10, matching Gemma entirely.</p>
+  <h3 style="margin-top:0; color:var(--green)">9/10: One point from cloud Gemma, running on a laptop GPU.</h3>
+  <p>Qwen3.6-35B-A3B at IQ4_XS with <code>/no_think</code> mode scores 9/10 on hard SWE challenges, one point behind cloud-served Gemma 4 31B (10/10). The only remaining failure (C04: Tree Serialization) requires extended reasoning that <code>/no_think</code> disables. This is a 35B-parameter model running on a laptop GPU with 128K context, delivering quality that was previously only available through cloud APIs.</p>
+  <p>The journey from 3/10 to 9/10 demonstrates that configuration matters as much as raw model capability. The six levers were: fixing inference settings (temp=0.6, reasoning budget), crossing the 4-bit weight quantization threshold (IQ3_XXS to IQ4_XS), using asymmetric KV cache (Q4 keys + Q8 values), disabling thinking for code generation tasks (<code>/no_think</code>), fixing a test bug in C06, and adding retries for sampling variance.</p>
+  <p>One tradeoff emerged: C04 (Tree Serialization) passes with thinking enabled but fails with <code>/no_think</code>. The optimal strategy is task-dependent: use <code>/no_think</code> for straightforward code generation, enable thinking for complex reasoning tasks. A hybrid approach that selects the mode based on task type would achieve 10/10, matching cloud Gemma entirely.</p>
 </div>
 
 <h3>What We Established</h3>
 <ul style="margin:1rem 0; padding-left:1.5rem;">
-  <li><strong>IQ4_XS + /no_think scores 8/10</strong>, up from 3/10 with the original misconfigured setup, a 167% improvement through configuration alone</li>
-  <li><strong>The gap to cloud Gemma is just 1 point</strong> (8/10 vs 9/10), and the only shared failure (C06) is universally unsolved across all models</li>
+  <li><strong>IQ4_XS + /no_think scores 9/10</strong>, up from 3/10 with the original misconfigured setup, a 200% improvement through configuration alone</li>
+  <li><strong>The gap to cloud Gemma is just 1 point</strong> (9/10 vs 10/10), with the only failure (C04) being a task that genuinely requires extended reasoning</li>
   <li><strong>Disabling thinking for code tasks is a net positive</strong>: +1 point (C07, C09 recovered), -1 point (C04 regressed), but the recovered challenges were previously hard failures while C04 is sampling-sensitive</li>
   <li><strong>Weight quantization is the dominant quality factor</strong>, but KV cache quantization contributes cumulative errors at longer contexts, particularly in the value cache</li>
   <li><strong>Asymmetric KV cache (Q4 keys + Q8 values) is the optimal compromise</strong>, protecting the 3.5x more sensitive value cache while preserving VRAM savings</li>
-  <li><strong>A hybrid thinking strategy would achieve 9/10</strong>: use /no_think for code generation, enable thinking for complex reasoning (C04), matching cloud Gemma entirely</li>
+  <li><strong>A hybrid thinking strategy would achieve 10/10</strong>: use /no_think for code generation, enable thinking for complex reasoning (C04), matching cloud Gemma entirely</li>
   <li><strong>Token efficiency matters</strong>: /no_think uses 735-5,336 tokens per challenge vs 3,336-16,384 with thinking. Every challenge under 5,000 tokens passes</li>
   <li><strong>The full-precision model is exceptional</strong>: SWE-bench 73.4%, double Gemma 4 on tool use</li>
 </ul>

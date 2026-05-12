@@ -1,6 +1,8 @@
 # Final Results: Qwen3.6-35B-A3B Performance
 
-## Optimized Configuration (Recommended)
+> **Note**: These speed benchmarks were measured with the IQ3_XXS quantization. For quality results, see [QUALITY.md](QUALITY.md). The recommended configuration is now **IQ4_XS + /no_think** (9/10 on SWE challenges, see `run-iq4xs.sh`).
+
+## IQ3_XXS Speed Benchmarks
 
 | Test | Tokens | Time | Rate |
 |------|--------|------|------|
@@ -84,7 +86,7 @@ Tested at temperature=0.0 with identical prompts:
 | Factual (planets) | Correct order | Identical | Yes |
 | Logic (syllogism) | Valid reasoning | Valid reasoning | Yes |
 
-Q4_0 KV is lossless on Qwen3.6 hybrid architecture because only 10 of 40 layers use traditional KV-cached attention (the other 30 use Gated DeltaNet linear attention which doesn't need a KV cache).
+Q4_0 KV is near-lossless on Qwen3.6 hybrid architecture because only 10 of 40 layers use traditional KV-cached attention (the other 30 use Gated DeltaNet linear attention which doesn't need a KV cache). For best quality, use asymmetric KV (Q4_0 keys + Q8_0 values) as configured in `run-iq4xs.sh`.
 
 ## ncmoe Comparison
 
