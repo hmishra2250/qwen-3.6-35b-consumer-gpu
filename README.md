@@ -6,8 +6,9 @@ Running a 35B-parameter MoE model on a laptop GPU (RTX 4070 Max-Q, 8GB VRAM) wit
 
 | Config | Score | Context | Speed | VRAM | Notes |
 |--------|:-----:|---------|-------|------|-------|
-| **IQ4_XS** (recommended) | **7/10** | 128K | ~10-15 t/s | 5.7 GB + RAM | Above 4-bit reliability threshold |
-| IQ3_XXS (original) | 5/10 | 128K | ~10-17 t/s | 3.8 GB + RAM | Below 4-bit threshold, quality loss |
+| **IQ4_XS + /no_think** (best) | **8/10** | 128K | ~10-15 t/s | 5.7 GB + RAM | 1 point from cloud Gemma |
+| IQ4_XS + thinking | 7/10 | 128K | ~10-15 t/s | 5.7 GB + RAM | Better on complex reasoning |
+| IQ3_XXS (original) | 5/10 | 128K | ~10-17 t/s | 3.8 GB + RAM | Below 4-bit threshold |
 | gemma-4-31b-it (cloud API) | 9/10 | -- | -- | -- | Cloud baseline for comparison |
 
 Tested on 10 hard SWE coding challenges (algorithms, data structures, concurrency, system design) with temperature=0.6 and up to 2 retries per challenge.
@@ -34,8 +35,8 @@ Tested on 10 hard SWE coding challenges (algorithms, data structures, concurrenc
 # 4. Test it
 ./test.sh
 
-# 5. Run SWE benchmark suite
-API_TEMP=0.6 MAX_RETRIES=2 python3 tests/swe_challenges.py my_label
+# 5. Run SWE benchmark suite (with /no_think for best results)
+API_TEMP=0.6 MAX_RETRIES=2 NO_THINK=1 python3 tests/swe_challenges.py my_label
 
 # 6. Use it (OpenAI-compatible API)
 curl http://127.0.0.1:8080/v1/chat/completions \
@@ -81,8 +82,10 @@ Three settings are mandatory for correct Qwen3.6 inference. Getting any of them 
 | Setting | Value | What Happens Without It |
 |---------|-------|------------------------|
 | `--reasoning-budget 4096` | Server flag | Model spends all tokens in `<think>` blocks, produces no visible answer |
+| `--reasoning-budget-message` | Server flag | Hard cutoff instead of graceful transition when budget is hit |
+| `--jinja` + `preserve_thinking` | Server flag | Model re-reasons from scratch each turn, wasting tokens |
 | `temperature=0.6` | Per-request | Repetition loops, stuck generation (official docs warn against temp=0) |
-| `top_p=0.95, top_k=20` | Per-request | Suboptimal sampling (official recommendation) |
+| `/no_think` in prompt | For code tasks | Model reasons excessively in visible output instead of producing code |
 
 ## Optimizations Applied
 
@@ -117,19 +120,19 @@ cmake -B build \
 
 10 hard coding challenges. Best results per config with correct settings (temp=0.6, reasoning_budget=4096, up to 2 retries).
 
-| # | Challenge | IQ4_XS | IQ3_XXS Q4_0 | IQ3_XXS q8_0 | gemma-31b |
-|---|-----------|:------:|:------------:|:------------:|:---------:|
+| # | Challenge | IQ4_XS /no_think | IQ4_XS think | IQ3_XXS | gemma-31b |
+|---|-----------|:------:|:------:|:------:|:---------:|
 | C01 | Count of Range Sum | PASS | PASS | PASS | PASS |
 | C02 | Burst Balloons | PASS | PASS | PASS | PASS |
-| C03 | Matrix Fibonacci + Pisano | PASS | PASS | FAIL | PASS |
-| C04 | Tree Serialize/Deserialize | PASS | FAIL | FAIL | PASS |
+| C03 | Matrix Fibonacci + Pisano | PASS | PASS | PASS | PASS |
+| C04 | Tree Serialize/Deserialize | FAIL | PASS | FAIL | PASS |
 | C05 | All Topological Sorts | PASS | PASS | PASS | PASS |
 | C06 | Calendar Interval Merging | FAIL | FAIL | FAIL | FAIL |
-| C07 | Mini Regex Engine | FAIL | FAIL | FAIL | PASS |
-| C08 | Consistent Hash Ring | PASS | FAIL | PASS | PASS |
-| C09 | Async Queue Bugs | FAIL | FAIL | FAIL | PASS |
+| C07 | Mini Regex Engine | PASS | FAIL | FAIL | PASS |
+| C08 | Consistent Hash Ring | PASS | PASS | FAIL | PASS |
+| C09 | Async Queue Bugs | PASS | FAIL | FAIL | PASS |
 | C10 | LRU Cache with TTL | PASS | PASS | PASS | PASS |
-| | **Total** | **7/10** | 5/10 | 5/10 | **9/10** |
+| | **Total** | **8/10** | 7/10 | 5/10 | **9/10** |
 
 ## Configuration Profiles
 
@@ -167,7 +170,7 @@ The key insight is that Qwen3.6-35B-A3B is not a standard transformer. Its hybri
 1. **MoE sparsity** (only 3B of 35B params active per token) lets you offload most weights to CPU
 2. **Hybrid attention** (only 10/40 layers use KV cache) makes aggressive KV quantization far less impactful
 
-Combining these on consumer hardware hits a sweet spot where a $1,500 laptop runs a 35B model that would normally need 80GB+ of VRAM, at 128K context, scoring 7/10 on hard coding challenges.
+Combining these on consumer hardware hits a sweet spot where a $1,500 laptop runs a 35B model that would normally need 80GB+ of VRAM, at 128K context, scoring 8/10 on hard coding challenges -- one point from cloud-served Gemma 4 31B.
 
 ## License
 

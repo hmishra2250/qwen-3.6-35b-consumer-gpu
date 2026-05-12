@@ -4,13 +4,16 @@ LLAMA_SERVER="$PROJECT_DIR/llama.cpp/build/bin/llama-server"
 MODEL="$PROJECT_DIR/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
 
 # IQ4_XS: 17.7 GB on disk, above the 4-bit reliability threshold
-# With --n-cpu-moe 26, ~10.7 GB experts on CPU, ~6 GB on GPU
+# With --n-cpu-moe 30, ~11 GB experts on CPU, ~5.7 GB on GPU
 # Asymmetric KV: Q4 keys (less sensitive) + Q8 values (more sensitive)
+# Jinja templating enables preserve_thinking and enable_thinking controls
+# Reasoning budget message provides graceful transition instead of hard cutoff
 NCMOE=${NCMOE:-30}
 CTX=${CTX:-131072}
 THREADS=${THREADS:-16}
 PORT=${PORT:-8080}
 REASONING_BUDGET=${REASONING_BUDGET:-4096}
+REASONING_MSG=${REASONING_MSG:-"I need to provide my answer now."}
 
 if [ ! -f "$MODEL" ]; then
     echo "ERROR: Model not found at $MODEL"
@@ -34,6 +37,10 @@ exec "$LLAMA_SERVER" \
     -np 1 \
     -t "$THREADS" \
     --no-mmap \
+    --jinja \
     --reasoning-budget "$REASONING_BUDGET" \
+    --reasoning-budget-message "$REASONING_MSG" \
+    --reasoning-format deepseek \
+    --chat-template-kwargs '{"preserve_thinking":true}' \
     --host 127.0.0.1 \
     --port "$PORT"

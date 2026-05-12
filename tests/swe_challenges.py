@@ -651,9 +651,19 @@ def _err_msg(d):
     return str(err)
 
 
+NO_THINK = os.environ.get("NO_THINK", "").lower() in ("1", "true", "yes")
+CODE_ONLY_SYSTEM = "You are a code generator. Respond with only the requested code in a single Python code block. No explanations, no commentary, no markdown outside the code block."
+
+
 def send_prompt(prompt, max_tokens=16384, retries=5):
+    if NO_THINK:
+        prompt = prompt.rstrip() + " /no_think"
+    messages = []
+    if NO_THINK:
+        messages.append({"role": "system", "content": CODE_ONLY_SYSTEM})
+    messages.append({"role": "user", "content": prompt})
     body = {
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "temperature": API_TEMP,
         "max_tokens": max_tokens,
     }
