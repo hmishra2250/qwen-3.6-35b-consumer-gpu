@@ -32,6 +32,20 @@ The `GGML_CUDA_FA_ALL_QUANTS=ON` flag is critical: it enables flash attention CU
 
 ## Step 2: Download Model
 
+Fast path: if you want the script to perform Step 1 and download IQ4_XS in one command, run:
+
+```bash
+./setup.sh
+```
+
+To also fetch the smaller IQ3_XXS fallback used by `run.sh`, run the setup script with:
+
+```bash
+DOWNLOAD_IQ3=1 ./setup.sh
+```
+
+Manual downloads, if you already built `llama.cpp` above and do not want to use `setup.sh`:
+
 ```bash
 # Install hf CLI if not present
 pip install -U huggingface_hub[cli]
