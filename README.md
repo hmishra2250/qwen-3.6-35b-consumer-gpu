@@ -11,7 +11,14 @@ Running a 35B-parameter MoE model on a laptop GPU (RTX 4070 Max-Q, 8GB VRAM) wit
 | IQ3_XXS (original) | 5/10 | 128K | ~10-17 t/s | 3.8 GB + RAM | Below 4-bit threshold |
 | gemma-4-31b-it (cloud API) | 10/10 | -- | -- | -- | Cloud baseline for comparison |
 
-Tested on 10 hard SWE coding challenges (algorithms, data structures, concurrency, system design) with temperature=0.6 and up to 2 retries per challenge.
+Tested on 10 hard SWE coding challenges (algorithms, data structures, concurrency, system design) with temperature=0.6 and up to 2 retries per challenge. Raw result JSON is kept under `tests/results/` so the headline numbers are auditable rather than just narrative claims.
+
+## Why This Repo Is Useful
+
+- Reproducible launch scripts for the two practical 8 GB VRAM configurations: `run-iq4xs.sh` for quality and `run.sh` for the smaller IQ3_XXS fallback.
+- A benchmark harness that sends OpenAI-compatible chat requests, extracts generated Python, executes hidden test cases, and stores every result artifact.
+- A final findings report plus supporting docs that explain which optimizations mattered, which failed, and where the remaining quality gap comes from.
+- GitHub-safe layout: model weights, `llama.cpp`, local `.env`, logs, and KL-divergence binaries are ignored and regenerated locally.
 
 ## Hardware
 
@@ -23,14 +30,14 @@ Tested on 10 hard SWE coding challenges (algorithms, data structures, concurrenc
 ## Quick Start
 
 ```bash
-# 1. Setup (clone llama.cpp, build with CUDA, download model)
+# 1. Setup (clone llama.cpp, build with CUDA, download IQ4_XS)
 ./setup.sh
 
-# 2. Run the server (IQ3_XXS, original config)
-./run.sh
-
-# 3. Run the server (IQ4_XS, recommended for quality)
+# 2. Run the recommended server (IQ4_XS, asymmetric KV)
 ./run-iq4xs.sh
+
+# 3. Optional fallback if RAM is tight (download with DOWNLOAD_IQ3=1 ./setup.sh)
+./run.sh
 
 # 4. Test it
 ./test.sh
@@ -154,14 +161,16 @@ CTX=32768 ./run.sh
 
 | Doc | Contents |
 |-----|----------|
-| [findings.html](docs/findings.html) | Comprehensive findings report with community evidence |
-| [QUALITY.md](docs/QUALITY.md) | Quality verification methodology and results |
-| [RESULTS.md](docs/RESULTS.md) | Benchmark numbers, speed comparisons |
-| [FINAL_CONFIG.md](docs/FINAL_CONFIG.md) | Complete flag justification, memory budget |
-| [OPTIMIZATION.md](docs/OPTIMIZATION.md) | What worked, what didn't, and why |
-| [RESEARCH.md](docs/RESEARCH.md) | All research findings with sources |
+| [findings.html](docs/findings.html) | Final findings report with community evidence |
+| [FAILURE_ANALYSIS.md](docs/FAILURE_ANALYSIS.md) | Side-by-side failure analysis: IQ4_XS vs Gemma 31B |
+| [QUALITY.md](docs/QUALITY.md) | Quality verification methodology and SWE benchmark results |
+| [RESULTS.md](docs/RESULTS.md) | Speed benchmarks and performance comparisons |
+| [FINAL_CONFIG.md](docs/FINAL_CONFIG.md) | Complete flag justification and memory budget |
+| [OPTIMIZATION.md](docs/OPTIMIZATION.md) | Full optimization log: what worked, what didn't, and why |
+| [RESEARCH.md](docs/RESEARCH.md) | Research findings with sources (quantization, inference, KV cache) |
 | [TUNING.md](docs/TUNING.md) | How to tune for your hardware |
-| [SETUP.md](docs/SETUP.md) | Manual setup instructions |
+| [SETUP.md](docs/SETUP.md) | Setup instructions (build, download, run) |
+| [GOAL.md](docs/GOAL.md) | Project goals and achieved results |
 
 ## Why This Works
 
@@ -172,6 +181,15 @@ The key insight is that Qwen3.6-35B-A3B is not a standard transformer. Its hybri
 
 Combining these on consumer hardware hits a sweet spot where a $1,500 laptop runs a 35B model that would normally need 80GB+ of VRAM, at 128K context, scoring 9/10 on hard coding challenges -- one point from cloud-served Gemma 4 31B at full precision.
 
+## Repository Hygiene
+
+The checked-in repository intentionally excludes heavyweight or private local state:
+
+- `models/` and `*.gguf` are ignored because model files are 13-18 GB each.
+- `llama.cpp/` is ignored because it is cloned and built by `setup.sh`.
+- `.env`, logs, and `*.kld` KL-divergence baselines are ignored because they can contain credentials or huge regenerated artifacts.
+- `tests/results/*.json` is tracked as benchmark evidence; these files are small enough for Git and support the claims above.
+
 ## License
 
-Scripts and documentation: MIT. Model weights are subject to [Qwen's license](https://huggingface.co/Qwen/Qwen3.6-35B-A3B).
+Scripts and documentation: MIT; see [LICENSE](LICENSE). Model weights are subject to [Qwen's license](https://huggingface.co/Qwen/Qwen3.6-35B-A3B).

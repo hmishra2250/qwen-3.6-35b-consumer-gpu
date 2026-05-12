@@ -1,5 +1,7 @@
 #!/bin/bash
-PROJECT_DIR="$HOME/Dev/2026/qwen-3.6-35b"
+set -euo pipefail
+
+PROJECT_DIR="${PROJECT_DIR:-$HOME/Dev/2026/qwen-3.6-35b}"
 LLAMA_SERVER="$PROJECT_DIR/llama.cpp/build/bin/llama-server"
 MODEL="$PROJECT_DIR/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
 
@@ -15,6 +17,13 @@ PORT=${PORT:-8080}
 REASONING_BUDGET=${REASONING_BUDGET:-4096}
 REASONING_MSG=${REASONING_MSG:-"I need to provide my answer now."}
 
+
+if [ ! -x "$LLAMA_SERVER" ]; then
+    echo "ERROR: llama-server not found or not executable at $LLAMA_SERVER"
+    echo "Run: ./setup.sh"
+    exit 1
+fi
+
 if [ ! -f "$MODEL" ]; then
     echo "ERROR: Model not found at $MODEL"
     echo "Run: hf download unsloth/Qwen3.6-35B-A3B-GGUF Qwen3.6-35B-A3B-UD-IQ4_XS.gguf --local-dir $PROJECT_DIR/models"
@@ -23,7 +32,7 @@ fi
 
 echo "=== Qwen3.6-35B-A3B Server (IQ4_XS) ==="
 echo "  ncmoe: $NCMOE | ctx: $CTX | kv: q4_0/q8_0 | threads: $THREADS | port: $PORT | reasoning_budget: $REASONING_BUDGET"
-echo "  Model: $(basename $MODEL)"
+echo "  Model: $(basename "$MODEL")"
 echo ""
 
 exec "$LLAMA_SERVER" \

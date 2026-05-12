@@ -2,10 +2,10 @@
 
 ## Prerequisites
 
-- CUDA 12.8 (already installed)
+- CUDA 12.6+ toolkit
 - cmake, git, build-essential
-- ~14GB free disk space for the model
-- huggingface-cli (for downloading)
+- ~18 GB free disk space for the IQ4_XS model (or ~14 GB for IQ3_XXS)
+- `hf` CLI (huggingface_hub)
 
 ## Step 1: Build llama.cpp from Source
 
@@ -16,7 +16,10 @@ cd llama.cpp
 cmake -B build \
   -DGGML_CUDA=ON \
   -DGGML_NATIVE=ON \
-  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_ARCHITECTURES=89 \
+  -DGGML_CUDA_FA_ALL_QUANTS=ON \
+  -DGGML_CUDA_COMPRESSION_MODE=speed
 cmake --build build --config Release -j$(nproc)
 ```
 
@@ -25,98 +28,75 @@ Verify build:
 ./build/bin/llama-server --version
 ```
 
+The `GGML_CUDA_FA_ALL_QUANTS=ON` flag is critical: it enables flash attention CUDA kernels for quantized KV cache, recovering ~5% speed.
+
 ## Step 2: Download Model
 
 ```bash
-# Install huggingface CLI if not present
+# Install hf CLI if not present
 pip install -U huggingface_hub[cli]
 
-# Download UD-IQ3_XXS (13.2 GB, single file)
-huggingface-cli download unsloth/Qwen3.6-35B-A3B-GGUF \
-  --include "UD-IQ3_XXS/*" \
-  --local-dir ~/Dev/2026/qwen-3.6-35b/models
+# IQ4_XS (recommended, 17.7 GB, 9/10 SWE score)
+hf download unsloth/Qwen3.6-35B-A3B-GGUF \
+  Qwen3.6-35B-A3B-UD-IQ4_XS.gguf \
+  --local-dir models
+
+# IQ3_XXS (alternative, 13.2 GB, 5/10 SWE score)
+hf download unsloth/Qwen3.6-35B-A3B-GGUF \
+  Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf \
+  --local-dir models
 ```
 
-## Step 3: System Preparation
+## Step 3: Launch Server
 
 ```bash
-# Allow mlock without root (prevents model from being swapped)
-sudo setcap cap_ipc_lock=+ep ~/Dev/2026/qwen-3.6-35b/llama.cpp/build/bin/llama-server
+# IQ4_XS with all optimizations (recommended)
+./run-iq4xs.sh
 
-# Or alternatively, set ulimit for current session
-ulimit -l unlimited
+# IQ3_XXS (smaller, lower quality)
+./run.sh
 ```
 
-## Step 4: Launch Server (Optimal Configuration)
-
+The server will take a few minutes to load the model. Check readiness with:
 ```bash
-~/Dev/2026/qwen-3.6-35b/llama.cpp/build/bin/llama-server \
-  -m ~/Dev/2026/qwen-3.6-35b/models/UD-IQ3_XXS/Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf \
-  -ngl 99 \
-  --n-cpu-moe 23 \
-  --flash-attn on \
-  --cache-type-k q8_0 \
-  --cache-type-v q8_0 \
-  --ctx-size 65536 \
-  -np 1 \
-  -t 16 \
-  --no-mmap \
-  --host 127.0.0.1 \
-  --port 8080
-```
-
-### Flag Breakdown:
-| Flag | Purpose |
-|------|---------|
-| `-ngl 99` | Push all layers to GPU |
-| `--n-cpu-moe 23` | Keep experts from first 23 layers on CPU (sweet spot) |
-| `--flash-attn on` | Enable flash attention (~30% VRAM savings) |
-| `--cache-type-k q8_0` | Quantize K cache (halves KV memory) |
-| `--cache-type-v q8_0` | Quantize V cache |
-| `--ctx-size 65536` | 64K context window |
-| `-np 1` | Single parallel slot (saves memory) |
-| `-t 16` | 16 threads (P-cores only for best IPC) |
-| `--no-mmap` | Preload to RAM (avoids page faults) |
-
-## Step 5: Verify
-
-```bash
-# Check server is running
 curl http://127.0.0.1:8080/health
+# Returns {"status":"ok"} when ready
+```
 
-# Check available models
-curl http://127.0.0.1:8080/v1/models
+## Step 4: Verify
 
-# Test generation speed
+```bash
+# Test generation
 curl http://127.0.0.1:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen3.6",
-    "messages": [{"role": "user", "content": "Write a quicksort in Python"}],
+    "messages": [{"role": "user", "content": "Write a quicksort in Python /no_think"}],
     "temperature": 0.6,
-    "top_p": 0.95,
     "max_tokens": 512
   }'
 ```
 
-## Step 6: Tuning
-
-If VRAM is too tight (OOM or <30 tok/s):
-- Increase ncmoe to 25: `--n-cpu-moe 25`
-- Reduce context: `--ctx-size 32768`
-
-If VRAM has headroom (check `nvidia-smi`):
-- Decrease ncmoe to 21: `--n-cpu-moe 21` (more on GPU = faster)
-- But watch for the cliff — below 21, performance collapses
-
-## Benchmark Script
+## Step 5: Run Benchmarks
 
 ```bash
-# Run the built-in benchmark
-~/Dev/2026/qwen-3.6-35b/llama.cpp/build/bin/llama-bench \
-  -m ~/Dev/2026/qwen-3.6-35b/models/UD-IQ3_XXS/Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf \
-  -ngl 99 \
-  --n-cpu-moe 23 \
-  -fa 1 \
-  -t 16
+# Full SWE challenge suite (recommended: /no_think mode)
+API_TEMP=0.6 MAX_RETRIES=2 NO_THINK=1 python3 tests/swe_challenges.py my_label
+
+# Single challenge (use FILTER env var)
+FILTER=C06 API_TEMP=0.6 NO_THINK=1 python3 tests/swe_challenges.py test
+
+# Quick smoke test
+./test.sh
 ```
+
+## Tuning
+
+If VRAM is too tight (OOM):
+- For IQ4_XS: increase ncmoe (`NCMOE=32 ./run-iq4xs.sh`) to move more experts to CPU
+- Reduce context: `CTX=65536 ./run-iq4xs.sh`
+
+If RAM is pressured (swap thrashing):
+- Switch to IQ3_XXS after downloading it: `DOWNLOAD_IQ3=1 ./setup.sh && ./run.sh` (13.2 GB vs 17.7 GB)
+- Reduce context: `CTX=65536 ./run.sh`
+
+See [TUNING.md](TUNING.md) for detailed tuning guidance.

@@ -22,78 +22,93 @@ instead of VRAM. This is THE key optimization for 8GB cards.
 | 21          | 38.6 t/s | 7.8 GB    | 12.4 GB  |
 | 19          | 19.8 t/s | -         | -        |
 
-**Sweet spot: ncmoe 23-25** — maximizes GPU utilization without OOM.
-At ncmoe 21+, VRAM is overfull and starts swapping, killing performance.
-
-### For our RTX 4070 Max-Q (8GB):
-- Start testing at ncmoe 25 (safest)
-- Try ncmoe 23 (potentially fastest)
-- The 4070 has higher bandwidth than 3070 Ti, expect slightly better numbers
-- Target: leave ~600-800MB VRAM headroom for stability
+**Sweet spot depends on quantization:**
+- IQ3_XXS (13.2 GB): ncmoe=25 (43 tok/s, 1 GB VRAM headroom)
+- IQ4_XS (17.7 GB): ncmoe=30 (10-15 tok/s, ~2.5 GB VRAM headroom, RAM is the constraint)
 
 ## 2. Quantization Choice
 
-### Best options for 8GB VRAM + 16GB RAM:
+### Two options for 8GB VRAM + 16GB RAM:
 
-| Quant         | File Size | Quality   | Fits? |
-|--------------|-----------|-----------|-------|
-| UD-IQ3_XXS  | 13.2 GB   | Acceptable| YES — best for speed |
-| UD-Q3_K_S   | 15.4 GB   | Good      | YES — tight on RAM |
-| UD-Q3_K_M   | 16.6 GB   | Very Good | MAYBE — 16GB RAM limit |
+| Quant | File Size | SWE Score | Speed | Recommendation |
+|-------|-----------|:---------:|-------|----------------|
+| **UD-IQ4_XS** | 17.7 GB | **9/10** | ~10-15 tok/s | Best quality, recommended |
+| UD-IQ3_XXS | 13.2 GB | 5/10 | ~43 tok/s | Best speed, lower quality |
 
-**Recommendation: UD-IQ3_XXS** (13.2 GB)
-- Used in the original thread with great results
-- Leaves enough headroom in 16GB RAM for system + KV cache
-- Unsloth Dynamic 2.0 preserves quality better than standard IQ3
+**IQ4_XS is recommended.** It crosses the 4-bit reliability threshold, scoring 9/10 on hard SWE challenges vs 5/10 for IQ3_XXS. The speed tradeoff (~3x slower) is acceptable for tasks where correctness matters.
+
+IQ3_XXS sits below the 4-bit threshold. Research consistently shows that sub-4-bit quantization degrades tool calling, complex reasoning, and multi-step code generation. The quality gap is not a minor precision loss but a qualitative shift in capability.
 
 ## 3. KV Cache Quantization
 
-### Q4_0 KV Cache (Recommended for Qwen3.6)
-Using `--cache-type-k q4_0 --cache-type-v q4_0`:
-- **Lossless on Qwen3.6** because only 10/40 layers use KV-cached attention
+### Asymmetric KV Cache (Recommended)
+Using `--cache-type-k q4_0 --cache-type-v q8_0`:
+- **Near-lossless on Qwen3.6** because only 10/40 layers use KV-cached attention
 - The other 30 layers use Gated DeltaNet (linear attention) -- no KV cache needed
-- Quarters KV cache memory vs FP16, halves vs q8_0
+- The value cache is ~3.5x more sensitive to quantization than the key cache (QAQ paper)
+- Asymmetric quantization protects values while saving VRAM on keys
 - Enables 128K context on 8GB VRAM
-- Verified: identical outputs at temp=0.0 across code, math, factual, and logic tests
+- KV cache errors accumulate at very long contexts (PM-KVQ paper); asymmetric KV mitigates this
 
-### q8_0 KV Cache (Fallback)
+### Symmetric Q4_0 (Fallback)
+Using `--cache-type-k q4_0 --cache-type-v q4_0`:
+- Maximum VRAM savings
+- Near-lossless at short contexts; quality may degrade at very long contexts
+- Adequate for most use cases
+
+### q8_0 KV Cache (Conservative)
 Using `--cache-type-k q8_0 --cache-type-v q8_0`:
-- Halves KV cache memory vs FP16
-- Enables 64K context in available memory
+- Maximum KV quality, enables 64K context
 - Slightly faster (~3%) due to less dequantization overhead
-- Use if 64K context is sufficient
 
-### Build Requirement for Q4_0
-Must build llama.cpp with `-DGGML_CUDA_FA_ALL_QUANTS=ON` to enable flash attention
-CUDA kernels for Q4_0. Without this, Q4_0 falls back to slower non-FA paths
-and loses ~5% generation speed.
+### Build Requirement
+Must build llama.cpp with `-DGGML_CUDA_FA_ALL_QUANTS=ON` to enable flash attention CUDA kernels for quantized KV. Without this, quantized KV falls back to slower non-FA paths and loses ~5% speed.
 
-### TurboQuant (experimental, not yet in mainline):
-- `--cache-type-k turbo3 --cache-type-v turbo3` -- 4.9x compression
-- Would enable 256K context but requires special llama.cpp build
-- Not recommended for initial setup
+## 4. Inference Settings (Critical for Qwen3.6)
 
-## 4. Flash Attention
+Three settings are mandatory. Getting any wrong causes severe degradation:
+
+| Setting | Value | What Happens Without It |
+|---------|-------|------------------------|
+| `temperature=0.6` | Per-request | Repetition loops, stuck generation. Official docs warn against temp=0. |
+| `--reasoning-budget 4096` | Server flag | Model spends all tokens in `<think>` blocks, produces no visible answer. |
+| `--jinja` + `preserve_thinking` | Server flag | Model re-reasons from scratch each turn, wasting tokens. |
+| `--reasoning-budget-message` | Server flag | Hard cutoff (78% HumanEval) instead of graceful transition (89%). |
+| `/no_think` in prompt | For code tasks | Model reasons excessively in visible output instead of producing code. |
+
+### /no_think Mode
+Appending `/no_think` to the user message disables the thinking phase. For code generation:
+- 9/10 SWE score (vs 7/10 with thinking)
+- Eliminates thinking overflow (model spending all tokens reasoning, never coding)
+- Forces simpler, more modular architectures that are robust under quantization
+- Only ~10-20% of tasks genuinely need thinking (complex recursive logic, state machines)
+
+### preserve_thinking
+`--chat-template-kwargs '{"preserve_thinking":true}'` retains the model's reasoning in conversation history. Without it, the model re-derives everything from scratch each turn. Community reports identify this as the single most impactful fix for Qwen3.6 reasoning loops.
+
+### reasoning-budget-message
+`--reasoning-budget-message "I need to provide my answer now."` provides a graceful transition when the thinking budget is exhausted, instead of a hard cutoff. Recovers 89% vs 78% on HumanEval benchmarks.
+
+## 5. Flash Attention
 
 `--flash-attn on` is mandatory:
 - ~30% VRAM reduction for attention computation
 - Required for quantized KV cache types
 - Syntax must include "on" explicitly
 
-## 5. Memory Management
+## 6. Memory Management
 
 ### --no-mmap
 - Forces model fully into RAM at load time (slower startup, faster inference)
 - Avoids page fault overhead during generation
 - Reported 3 tok/s improvement on constrained systems
-- Use with caution on 16GB RAM — may cause swap pressure during load
 
 ### --mlock
 - Prevents OS from swapping model pages to disk
 - Requires `CAP_IPC_LOCK` or `ulimit -l unlimited`
 - Critical for stable long-running inference
 
-## 6. Thread Configuration
+## 7. Thread Configuration
 
 The i7-14700HX has:
 - 8 P-cores (16 threads with HT)
@@ -103,46 +118,15 @@ The i7-14700HX has:
 For llama.cpp expert processing on CPU:
 - Use `-t 16` (P-core threads only) for best per-thread performance
 - E-cores have lower IPC and can hurt MoE expert throughput
-- Alternative: `-t 20` if E-cores help with batch processing
 
-## 7. Batch Size
-
-- `-b 2048 -ub 512` (defaults) — adequate for single-user
-- Higher values increase prompt processing speed but use more VRAM
-- For 8GB VRAM, keep defaults to avoid compute buffer VRAM pressure
-
-## 8. Engine Choice: llama.cpp vs ik_llama.cpp
-
-### ik_llama.cpp advantages:
-- ~1.9x faster MoE inference (fused expert operations)
-- Better GPU offload threshold for sparse experts
-- Quantized matmul CUDA kernels for all quant types
-- Graph reuse (`-gr`) reduces kernel launch overhead
-
-### ik_llama.cpp drawbacks:
-- Less tested, more niche
-- CUDA-only focus (fine for us)
-- May have compatibility issues with newest models
-
-**Recommendation: Start with mainline llama.cpp, benchmark, then try ik_llama.cpp**
-
-## 9. What NOT to Do
+## 8. What NOT to Do
 
 - Do NOT use CUDA 13.2 (produces gibberish with Qwen3.6)
 - Do NOT use speculative decoding (drops throughput on MoE models)
-- Do NOT use DFlash (not stable for MoE in llama.cpp yet)
-- Do NOT set ncmoe too high (>30) — wastes GPU by underutilizing VRAM
-- Do NOT set ncmoe too low (<21) — causes VRAM overflow and thrashing
-
-## 10. Expected Performance
-
-Based on research extrapolation for RTX 4070 Max-Q 8GB + 16GB RAM:
-- **Conservative (ncmoe 25):** 40-45 tok/s
-- **Optimal (ncmoe 23):** 43-48 tok/s
-- **Aggressive (ncmoe 21):** Risk of OOM, may drop to 20 tok/s
-
-The RTX 4070 has 256 GB/s memory bandwidth vs 3070 Ti's 192 GB/s,
-giving us a ~33% bandwidth advantage for GPU-resident operations.
+- Do NOT set temperature=0.0 (causes repetition loops, score drops from 7/10 to 6/10)
+- Do NOT omit reasoning-budget (model spends all tokens thinking, produces no answer)
+- Do NOT set ncmoe too high (>32) for IQ4_XS -- wastes GPU by underutilizing VRAM
+- Do NOT set ncmoe too low for your model -- causes OOM and thrashing
 
 ## Sources
 
@@ -151,7 +135,8 @@ giving us a ~33% bandwidth advantage for GPU-resident operations.
 - [Qwen3.6 on 24GB (Amine Raji)](https://aminrj.com/posts/llamacpp-qwen36-35b/)
 - [Best Way to Run Qwen 3.6 35B MoE Locally (InsiderLLM)](https://insiderllm.com/guides/best-way-run-qwen-3-6-35b-moe-locally/)
 - [Unsloth Qwen3.6-35B-A3B-GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)
-- [TurboQuant Discussion](https://github.com/ggml-org/llama.cpp/discussions/20969)
+- [QAQ: Quality Adaptive Quantization for LLM KV Cache](https://arxiv.org/abs/2403.04643)
+- [PM-KVQ: Post-training Multi-bit KV Cache Quantization](https://arxiv.org/abs/2412.15307)
+- [r/LocalLLaMA: Reasoning Budget Controls Analysis](https://insights.marvin-42.com/articles/rlocalllama-tracks-llamacpps-new-reasoning-budget-controls)
 - [ik_llama.cpp](https://github.com/ikawrakow/ik_llama.cpp)
 - [llama.cpp Server README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
-- [NVIDIA RTX llama.cpp Blog](https://developer.nvidia.com/blog/accelerating-llms-with-llama-cpp-on-nvidia-rtx-systems/)

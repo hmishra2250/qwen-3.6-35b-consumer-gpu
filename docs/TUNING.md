@@ -1,11 +1,23 @@
 # Tuning Guide: Finding Your Sweet Spot
 
+## Choosing a Quantization
+
+| Quant | Size | SWE Score | Speed | Best For |
+|-------|------|:---------:|-------|----------|
+| **IQ4_XS** | 17.7 GB | **9/10** | ~10-15 tok/s | Quality-sensitive tasks (code, reasoning) |
+| IQ3_XXS | 13.2 GB | 5/10 | ~43 tok/s | Speed-sensitive tasks, tight RAM |
+
+Use `./run-iq4xs.sh` for IQ4_XS (recommended) or `./run.sh` for IQ3_XXS.
+
 ## The ncmoe Curve
 
-Performance follows an inverted-U curve as you decrease ncmoe:
+Performance follows an inverted-U curve as you decrease ncmoe. The sweet spot depends on model size:
+
+- **IQ3_XXS** (13.2 GB): ncmoe=25 is optimal (~43 tok/s, 1 GB VRAM headroom)
+- **IQ4_XS** (17.7 GB): ncmoe=30 is required (~10-15 tok/s, RAM becomes the constraint)
 
 ```
-Speed (tok/s)
+Speed (tok/s) — IQ3_XXS
   50 |              *
   45 |           *     *
   40 |        *           *
@@ -18,6 +30,8 @@ Speed (tok/s)
        ← more on CPU          more on GPU →
 ```
 
+IQ4_XS operates further left on this curve (ncmoe=30) because its larger weights need more CPU offloading.
+
 ## Step-by-Step Tuning Process
 
 ### 1. Find your VRAM ceiling
@@ -28,17 +42,17 @@ nvidia-smi --query-gpu=memory.used --format=csv,noheader
 # Subtract from 8188 MiB total → your budget
 ```
 
-### 2. Run benchmarks
+### 2. Start with the recommended config
 
 ```bash
-./benchmark.sh
+./run-iq4xs.sh    # IQ4_XS, ncmoe=30, asymmetric KV, 128K context
 ```
 
-### 3. Interpret results
+### 3. Adjust if needed
 
-- If ncmoe=23 works without OOM → use it (expected ~43 tok/s)
-- If ncmoe=23 OOMs → fall back to ncmoe=25 (~40 tok/s)
-- If ncmoe=25 OOMs → reduce context: CTX=32768 NCMOE=23 ./run.sh
+- If OOM with IQ4_XS → increase ncmoe: `NCMOE=32 ./run-iq4xs.sh`
+- If RAM is tight → reduce context: `CTX=65536 ./run-iq4xs.sh`
+- If RAM is critically tight → switch to IQ3_XXS: `./run.sh`
 
 ### 4. Monitor during real usage
 
@@ -77,7 +91,7 @@ Larger context = more KV cache = less VRAM for compute buffers.
 | 65536   | ~360 MiB  | ~680 MiB  | Max for q8_0 on 8GB |
 | 131072  | ~720 MiB  | ~1360 MiB | Max for q4_0 on 8GB |
 
-With Q4_0 KV cache, 128K context fits comfortably on 8GB VRAM (720 MiB vs 1360 MiB for q8_0). This is lossless on Qwen3.6 because only 10/40 layers use KV-cached attention.
+With Q4_0 KV cache, 128K context fits comfortably on 8GB VRAM (720 MiB vs 1360 MiB for q8_0). This is near-lossless on Qwen3.6 because only 10/40 layers use KV-cached attention. For best quality, use asymmetric KV (`--cache-type-k q4_0 --cache-type-v q8_0`) to protect the more sensitive value cache.
 
 ## Build Flags (Critical for Q4_0 Performance)
 
@@ -93,9 +107,18 @@ cmake -B build \
 
 `GGML_CUDA_FA_ALL_QUANTS=ON` enables flash attention CUDA kernels for Q4_0 KV cache. Without it, Q4_0 loses ~5% generation speed.
 
-## Advanced: ik_llama.cpp (Phase 2)
+## Prompt Tuning: /no_think vs Thinking
 
-If you want ~1.5-2x more performance after baseline is working:
+| Mode | SWE Score | Best For |
+|------|:---------:|----------|
+| `/no_think` (default) | 9/10 | Code generation, clear specs, most tasks |
+| Thinking | 7/10 | Complex reasoning, recursive data structures, state machines |
+
+Append `/no_think` to user messages for code tasks. Omit it for problems requiring multi-step architectural reasoning.
+
+## Advanced: ik_llama.cpp
+
+If you want to experiment with alternative inference engines:
 
 ```bash
 cd ~/Dev/2026/qwen-3.6-35b
@@ -106,13 +129,13 @@ cmake --build build --config Release -j$(nproc)
 
 # Run with graph reuse (reduces kernel overhead)
 ./build/bin/llama-server \
-    -m ../models/UD-IQ3_XXS/Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf \
+    -m ../models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf \
     -ngl 99 \
-    --n-cpu-moe 23 \
+    --n-cpu-moe 30 \
     --flash-attn on \
-    --cache-type-k q8_0 \
+    --cache-type-k q4_0 \
     --cache-type-v q8_0 \
-    --ctx-size 65536 \
+    --ctx-size 131072 \
     -np 1 \
     -t 16 \
     --no-mmap \
@@ -122,7 +145,7 @@ cmake --build build --config Release -j$(nproc)
 ```
 
 The `-gr` (graph reuse) flag is ik_llama.cpp-specific and eliminates repeated
-graph construction overhead during generation.
+graph construction overhead during generation. Not tested with current setup.
 
 ## Troubleshooting
 
