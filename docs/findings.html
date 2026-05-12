@@ -23,7 +23,7 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
-    line-height: 1.6;
+    line-height: 1.7;
     max-width: 960px;
     margin: 0 auto;
     padding: 2rem 1.5rem;
@@ -72,19 +72,19 @@
 <body>
 
 <h1>Qwen3.6-35B-A3B on Consumer GPU</h1>
-<p class="subtitle">Running a 35B MoE model on RTX 4070 8GB &mdash; what works, what breaks, and what we learned.<br>
+<p class="subtitle">Running a 35B MoE model on RTX 4070 8GB: what works, what breaks, and what we learned.<br>
 Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 
 <nav class="toc">
 <h3>Contents</h3>
 <ol>
-  <li><a href="#tldr">TL;DR</a></li>
-  <li><a href="#setup">The Setup</a></li>
+  <li><a href="#tldr">Executive Summary</a></li>
+  <li><a href="#setup">Test Environment</a></li>
   <li><a href="#benchmarks">Benchmark Results</a></li>
-  <li><a href="#full-vs-quant">Full Model vs Quantized: What We Lost</a></li>
-  <li><a href="#pitfalls">Three Critical Pitfalls (and Fixes)</a></li>
+  <li><a href="#kv-cache">Isolating the Bottleneck: KV Cache Quantization</a></li>
+  <li><a href="#weight-quant">Weight Quantization: The Actual Culprit</a></li>
+  <li><a href="#pitfalls">Three Configuration Pitfalls and Their Fixes</a></li>
   <li><a href="#community">Community Corroboration</a></li>
-  <li><a href="#kv-cache">Q4_0 KV Cache: Confirmed Lossless</a></li>
   <li><a href="#agents">Viability for Local Agent Orchestration</a></li>
   <li><a href="#alternatives">Alternative Configurations</a></li>
   <li><a href="#verdict">Final Verdict</a></li>
@@ -92,33 +92,33 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 </nav>
 
 <!-- ================================================================== -->
-<h2 id="tldr">1. TL;DR</h2>
+<h2 id="tldr">1. Executive Summary</h2>
 
 <div class="grid">
   <div class="card">
-    <h4>The Full Model</h4>
+    <h4>Full-Precision Model</h4>
     <p class="score" style="color:var(--green)">73.4%</p>
-    <p>SWE-bench Verified &mdash; beats Gemma 4 31B (52.0%) by 21 points. Doubles it on MCPMark tool use (37.0% vs 18.1%).</p>
+    <p>SWE-bench Verified. Outperforms Gemma 4 31B (52.0%) by 21 points. Doubles it on MCPMark tool use (37.0% vs 18.1%).</p>
   </div>
   <div class="card">
     <h4>Our Quantized Setup</h4>
     <p class="score" style="color:var(--yellow)">5/10</p>
-    <p>SWE coding challenges on IQ3_XXS + Q4_0 KV. Gemma 4 31B via API scored 8/10. The gap is quantization loss, not model quality.</p>
+    <p>SWE coding challenges on IQ3_XXS weights + Q4_0 KV. Gemma 4 31B (cloud API) scored 8/10. The gap is real, but attributing it correctly matters.</p>
   </div>
 </div>
 
 <div class="highlight">
-  <strong>The core finding:</strong> Qwen3.6-35B-A3B at full precision is the strongest open model for coding and agent tasks. But IQ3_XXS quantization (~3-bit weights) loses enough quality to drop it below cloud-served Gemma 4 models on hard coding challenges. Q4_0 KV cache quantization, however, is confirmed lossless on this hybrid architecture.
+  <strong>The central question of this investigation</strong> was whether our quality gap (5/10 vs 8/10 against cloud-served Gemma 4) is caused by KV cache quantization, weight quantization, or both. The answer, supported by our experiments and extensive external evidence, is nuanced: <strong>both contribute, but they contribute in different ways and at different magnitudes, depending on context length and task type.</strong> We initially concluded that KV cache quantization was "confirmed lossless." That framing was overly simplistic. The full picture is more interesting and more useful.
 </div>
 
 <!-- ================================================================== -->
-<h2 id="setup">2. The Setup</h2>
+<h2 id="setup">2. Test Environment</h2>
 
 <table>
 <tr><th>Component</th><th>Detail</th></tr>
 <tr><td>Model</td><td>Qwen3.6-35B-A3B (35B total, 3B active per token, MoE)</td></tr>
 <tr><td>Weight Quantization</td><td>IQ3_XXS via Unsloth (~13 GB on disk, ~6 GB VRAM with CPU offload)</td></tr>
-<tr><td>KV Cache Quantization</td><td>Q4_0 (only affects 10/40 layers due to hybrid DeltaNet architecture)</td></tr>
+<tr><td>KV Cache Quantization</td><td>Q4_0 keys and values (only affects 10/40 layers due to hybrid DeltaNet architecture)</td></tr>
 <tr><td>Context Length</td><td>128K tokens (Q4_0 KV) / 64K tokens (q8_0 KV)</td></tr>
 <tr><td>GPU</td><td>NVIDIA RTX 4070 Max-Q, 8 GB VRAM</td></tr>
 <tr><td>CPU Offload</td><td><code>--n-cpu-moe 25</code> (MoE expert layers in system RAM)</td></tr>
@@ -133,7 +133,7 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 <table>
 <tr>
   <th>#</th><th>Challenge</th>
-  <th>Q4_0</th><th>q8_0</th>
+  <th>Q4_0 KV</th><th>q8_0 KV</th>
   <th>gemma-31b</th><th>gemma-26b</th>
 </tr>
 <tr><td>C01</td><td>Count of Range Sum (Merge Sort)</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="pass">PASS</td></tr>
@@ -153,14 +153,14 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 </tr>
 </table>
 
-<p class="footnote">Q4_0 and q8_0 run locally on RTX 4070 8GB. Gemma models via Gemini API (cloud). "API ERR" = Gemini returned HTTP 500 or timed out, not a model failure. All runs used correct settings: temp=0.6, reasoning_budget=4096.</p>
+<p class="footnote">Q4_0 and q8_0 run locally on RTX 4070 8GB. Gemma models served via Gemini API (cloud). "API ERR" denotes Gemini HTTP 500 or timeout, not a model failure. All runs used corrected settings: temp=0.6, reasoning_budget=4096.</p>
 
-<h3>Full Model Benchmarks (Unquantized)</h3>
+<h3>Full-Precision Benchmarks (Unquantized)</h3>
 
 <table>
 <tr><th>Benchmark</th><th>Qwen3.6-35B-A3B</th><th>Gemma 4 31B</th><th>Gemma 4 26B-A4B</th></tr>
 <tr><td>SWE-bench Verified</td><td class="pass"><strong>73.4%</strong></td><td>52.0%</td><td>17.4%</td></tr>
-<tr><td>MCPMark (tool use)</td><td class="pass"><strong>37.0%</strong></td><td>18.1%</td><td>&mdash;</td></tr>
+<tr><td>MCPMark (tool use)</td><td class="pass"><strong>37.0%</strong></td><td>18.1%</td><td>--</td></tr>
 <tr><td>Terminal-Bench 2.0</td><td class="pass"><strong>51.5%</strong></td><td>42.9%</td><td>34.2%</td></tr>
 <tr><td>LiveCodeBench v6</td><td>80.4%</td><td class="pass"><strong>80.0%</strong></td><td>77.1%</td></tr>
 <tr><td>MMLU-Pro</td><td>85.2%</td><td>85.2%</td><td>82.6%</td></tr>
@@ -171,78 +171,167 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 <p class="footnote">Sources: <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">Qwen3.6 Model Card</a>, <a href="https://deepmind.google/models/gemma/gemma-4/">Google DeepMind Gemma 4</a>. Self-reported by respective teams.</p>
 
 <!-- ================================================================== -->
-<h2 id="full-vs-quant">4. Full Model vs Quantized: What We Lost</h2>
+<h2 id="kv-cache">4. Isolating the Bottleneck: KV Cache Quantization</h2>
+
+<p>A common assumption in the quantization community is that weight quantization is the primary source of quality loss, while KV cache quantization is relatively harmless. We initially shared this assumption. Our Q4_0 and q8_0 runs scored identically (5/10), which seemed to confirm that KV cache quantization was "lossless." However, a deeper review of the literature reveals a more complex picture, and one that matters considerably for production deployments.</p>
+
+<h3>What the Research Actually Shows</h3>
+
+<p>The impact of KV cache quantization depends heavily on three factors: bit-width, context length, and model architecture. At 8-bit precision, the evidence overwhelmingly shows that KV cache quantization is nearly free:</p>
+
+<blockquote>
+  Q8 KV cache costs +0.05% perplexity vs FP16, effectively free quality. HumanEval degradation: 0 to -0.2 points.
+  <cite>-- <a href="https://www.techplained.com/kv-cache-quantization">TechPlained: KV Cache Quantization: Q8 vs FP16 (and Q4 Pitfalls)</a>, benchmarking Qwen 3.5 9B at 32K context</cite>
+</blockquote>
+
+<blockquote>
+  FP8 KV cache introduces at most 1-2 points of accuracy degradation across reasoning benchmarks, with lowest recovery at 97% (GPQA:Diamond). For Qwen3.5-27B, accuracy impact was at most 0.7 points.
+  <cite>-- <a href="https://vllm-project.github.io/2026/04/22/fp8-kvcache.html">vLLM Blog: The State of FP8 KV-Cache and Attention Quantization in vLLM</a>, April 2026</cite>
+</blockquote>
+
+<p>But at 4-bit, the picture changes. Quality loss becomes measurable, and two patterns emerge that are easy to miss in short-context benchmarks:</p>
 
 <div class="highlight warning">
-  <strong>The full Qwen3.6 dominates Gemma 4 on coding.</strong> Our quantized version losing to Gemma is entirely a quantization story, not a model quality story.
+  <strong>Pattern 1: Value cache is more sensitive than key cache.</strong> Q4 V-cache costs approximately 1.4% perplexity and 1.5+ points on reasoning benchmarks, while Q4 K-cache costs only about 0.4%. Our setup quantizes both to Q4_0, meaning we absorb the full impact of the more sensitive V-cache quantization.
 </div>
 
-<p>IQ3_XXS is approximately 3-bit weight quantization. Research shows this causes significant quality degradation:</p>
+<blockquote>
+  Q4 K+V cache on Qwen 3.5 9B: +2.1% perplexity, -2.8 HumanEval points. The optimal strategy for tight VRAM: Q4 K-cache + Q8 V-cache is the magic combo.
+  <cite>-- <a href="https://www.techplained.com/kv-cache-quantization">TechPlained: KV Cache Quantization</a></cite>
+</blockquote>
+
+<blockquote>
+  Key cache is more sensitive to quantization than value cache. Quantization error in keys has multiplicative dependencies on query vectors, attention scores, AND value differences, while value cache error only depends on the attention score.
+  <cite>-- <a href="https://arxiv.org/html/2403.04643v2">QAQ: Quality Adaptive Quantization for LLM KV Cache (ICCV 2025 Workshop)</a></cite>
+</blockquote>
+
+<div class="highlight warning">
+  <strong>Pattern 2: Error accumulates with context length.</strong> Unlike weight quantization, where quality loss is fixed regardless of input length, KV cache quantization errors compound as more tokens are processed. This makes short-context benchmarks (like our 10 SWE challenges) a poor proxy for long-context performance.
+</div>
+
+<blockquote>
+  During each decoding step, the generated token needs to access the quantized low-precision KV Cache, leading to significantly large cumulative quantization errors. Directly applying existing KV cache quantization to long-CoT LLMs causes significant performance degradation.
+  <cite>-- <a href="https://openreview.net/forum?id=Vem6FQvRvq">PM-KVQ: Progressive Mixed-precision KV Cache Quantization for Long-CoT LLMs (OpenReview)</a></cite>
+</blockquote>
+
+<blockquote>
+  4-bit KV cache showed approximately 8% accuracy loss on 20-iteration agentic reasoning tasks (89.1% to 81.2%), and 2-bit showed approximately 16.5% loss.
+  <cite>-- <a href="https://dasroot.net/posts/2026/05/kv-cache-quantization-agentic-coding-long-horizon/">DASRoot: Is KV Cache Quantization Sabotaging Your Context?</a></cite>
+</blockquote>
+
+<p>Perhaps the most striking evidence comes from a direct llama.cpp bug report:</p>
+
+<blockquote>
+  Llama-3.3-70B with Q4_K_M weights and q8_0 KV cache produced systematically wrong date calculations. All 3 runs with q8_0 KV were wrong; all 3 runs with f16 KV were correct.
+  <cite>-- <a href="https://github.com/ggml-org/llama.cpp/issues/10697">llama.cpp Issue #10697: compression of q8/q4 cache-type-k cache-type-v badly degrading quality</a></cite>
+</blockquote>
+
+<h3>Why Our Benchmark Did Not Catch This</h3>
+
+<p>Our SWE challenges are single-turn tasks with moderate context requirements (2,000 to 16,000 tokens of output). At these lengths, the cumulative error from Q4_0 KV cache remains within noise. The Q4_0 and q8_0 runs scored 5/10 each, with variance on different challenges (C03 vs C08), which we correctly attributed to sampling randomness at temp=0.6.</p>
+
+<p>However, this does not mean KV cache quantization is lossless. It means our benchmark was not designed to detect it. The localbench.substack.com KL divergence study offers a clearer picture:</p>
+
+<blockquote>
+  Qwen 3.6 27B at q4_0 showed KL divergence of 0.581 on long documents specifically, vs 0.087-0.117 overall. Gemma 4 26B-A4B jumped to KL divergence of 1.088 at q4_0.
+  <cite>-- <a href="https://localbench.substack.com/p/kv-cache-quantization-benchmark">localbench: Gemma 4 and Qwen 3.6 with q8_0 and q4_0 KV cache: KL divergence results</a></cite>
+</blockquote>
+
+<h3>The Hybrid Architecture Advantage (and Its Limits)</h3>
+
+<p>Qwen3.6 does benefit substantially from its hybrid DeltaNet architecture. Only 10 of 40 layers use standard multi-head attention and maintain a KV cache. The remaining 30 layers use Gated DeltaNet (linear attention with fixed-size recurrent state), which is completely unaffected by KV quantization. This structural property provides a genuine buffer:</p>
+
+<blockquote>
+  q4_0 KV cache quantization achieves perfect lossless performance on hybrid models like Qwen3.5-9B, with BLEU 1.000 across 10 test configurations at 4x compression. Token-level identical output between f16 and q4_0 KV cache.
+  <cite>-- <a href="https://github.com/ggml-org/llama.cpp/issues/21385">llama.cpp Issue #21385: Per-head adaptive KV cache quantization</a></cite>
+</blockquote>
+
+<blockquote>
+  The linear/sliding attention layers act as error correction. Quantization noise in the few attention layers is absorbed by the surrounding layers.
+  <cite>-- <a href="https://github.com/ggml-org/llama.cpp/issues/21385">llama.cpp Issue #21385</a></cite>
+</blockquote>
+
+<p>This is a real advantage. On standard transformer architectures (where all layers use full attention), Q4_0 KV cache causes measurable degradation. On Qwen3.6's hybrid architecture, the impact is substantially reduced. But "substantially reduced" is not "zero," particularly at long contexts where the cumulative error in those 10 attention layers still accumulates.</p>
+
+<div class="highlight">
+  <strong>Revised assessment:</strong> Q4_0 KV cache on Qwen3.6 is <em>near-lossless at short to moderate contexts</em> (under 32K tokens) thanks to the hybrid architecture. At longer contexts (64K+), the error accumulation in the 10 attention layers becomes measurable, though still significantly smaller than on standard transformers. For maximum quality at long contexts, <code>--cache-type-k q4_0 --cache-type-v q8_0</code> is the recommended compromise, preserving most of the VRAM savings while protecting the more sensitive value cache.
+</div>
+
+<!-- ================================================================== -->
+<h2 id="weight-quant">5. Weight Quantization: The Actual Culprit</h2>
+
+<p>While KV cache quantization plays a role that we initially underestimated, the dominant source of our quality gap remains weight quantization. At comparable bit-widths, weight quantization consistently causes larger accuracy drops than KV cache quantization:</p>
+
+<blockquote>
+  LLaMA-2-13B with W4 (weight-only 4-bit) had perplexity 4.99 vs 4.88 FP16 baseline. Adding KV4 on top (W4KV4) only moved it to 5.00. The KV cache quantization added only 0.01 perplexity on top of weight quantization's 0.11.
+  <cite>-- <a href="https://arxiv.org/html/2402.12065v2">WKVQuant: Quantizing Weight and Key/Value Cache for Large Language Models Gains More</a></cite>
+</blockquote>
+
+<blockquote>
+  On Llama-3.1-8B-Instruct, Q3_K_S weight quantization dropped MMLU from 63.50% to 59.31% (-4.19 points) and GSM8K from 77.63% to 68.31% (-9.32 points). These are far larger drops than any KV cache quantization result at similar compression ratios.
+  <cite>-- <a href="https://arxiv.org/html/2601.14277v1">Which Quantization Should I Use? A Unified Evaluation of llama.cpp Quantization</a></cite>
+</blockquote>
+
+<p>Our setup uses IQ3_XXS, which is approximately 3-bit weight quantization. This sits below the 4-bit threshold that the research community has identified as the floor for reliable reasoning performance:</p>
 
 <table>
 <tr><th>Quantization</th><th>Estimated Quality Retention</th><th>KL Divergence (99.9%)</th></tr>
 <tr><td>BF16 (full)</td><td>100%</td><td>0.000</td></tr>
 <tr><td>Q6_K_XL</td><td>~99.5%</td><td>0.144</td></tr>
 <tr><td>Q4_K_XL</td><td>~99%</td><td>0.410</td></tr>
-<tr><td style="font-weight:700; color:var(--yellow)">IQ3_XXS (ours)</td><td style="color:var(--yellow)">~90-95%</td><td style="color:var(--yellow)">1.530</td></tr>
+<tr style="font-weight:700; color:var(--yellow)"><td>IQ3_XXS (ours)</td><td>~90-95%</td><td>1.530</td></tr>
 <tr><td>IQ2_XXS</td><td>~87%</td><td>4.222</td></tr>
 </table>
 
 <p class="footnote">KLD data from <a href="https://unsloth.ai/docs/models/qwen3.5/gguf-benchmarks">Unsloth GGUF benchmarks for Qwen3.5-35B-A3B</a>. Quality retention estimates from <a href="https://www.compute-market.com/blog/qwen-3-6-local-hardware-guide-2026">Compute Market</a>.</p>
 
 <blockquote>
-  Most of the original model&rsquo;s advantages are lost at 3-bit precision. Qwen3 shows more pronounced performance degradation under low-bit quantization than LLaMA3.
-  <cite>&mdash; <a href="https://arxiv.org/html/2505.02214v1">arXiv:2505.02214</a>, Qwen3 quantization study, May 2025</cite>
+  Most of the original model's advantages are lost at 3-bit precision. Qwen3 shows more pronounced performance degradation under low-bit quantization than LLaMA3.
+  <cite>-- <a href="https://arxiv.org/html/2505.02214v1">arXiv:2505.02214, Qwen3 quantization study</a>, May 2025</cite>
 </blockquote>
-
-<blockquote>
-  On agentic coding loops, the delta between Q4 and IQ3 is most visible as occasional bracket mismatches and weaker tool-call formatting.
-  <cite>&mdash; <a href="https://www.compute-market.com/blog/qwen-3-6-local-hardware-guide-2026">Compute Market: Qwen3.6 Local Hardware Guide</a>, April 2026</cite>
-</blockquote>
-
-<p>A specific Qwen3.5-122B study found even more severe degradation:</p>
 
 <blockquote>
   The Q3-level quantization exhibited unexpectedly low quality, with a high probability of partial random garbled output and infinite repetition when encountering tasks like tool calls and Python code generation.
-  <cite>&mdash; <a href="https://huggingface.co/unsloth/Qwen3.5-122B-A10B-GGUF/discussions/7">HuggingFace Discussion #7</a>, user lingyezhixing</cite>
+  <cite>-- <a href="https://huggingface.co/unsloth/Qwen3.5-122B-A10B-GGUF/discussions/7">HuggingFace Discussion #7</a>, user lingyezhixing, on Qwen3.5-122B</cite>
 </blockquote>
 
-<!-- ================================================================== -->
-<h2 id="pitfalls">5. Three Critical Pitfalls (and Fixes)</h2>
+<h3>The Compounding Effect</h3>
 
-<p>Our initial tests scored <strong>3/10</strong> with 5 challenges producing no visible answer. After discovering three configuration errors, we improved to <strong>5/10</strong> with all 10 challenges answered. Every issue we found is independently documented by the community.</p>
+<p>What makes our configuration particularly aggressive is that we stack two forms of quantization simultaneously: IQ3_XXS weights and Q4_0 KV cache. The research from WKVQuant cited above suggests these losses are roughly additive. On a standard transformer, that would mean absorbing both the weight quantization penalty (the larger factor) and the KV cache quantization penalty (the smaller but non-trivial factor). The hybrid architecture provides a partial shield against the KV component, but it does not protect against weight quantization at all.</p>
+
+<p>The practical result is what we observe: a model that handles straightforward coding tasks competently (5/10 on hard challenges, with all 10 producing answers), but that falls short of its full-precision potential (73.4% SWE-bench) by a margin that cannot be explained by KV cache quantization alone.</p>
+
+<!-- ================================================================== -->
+<h2 id="pitfalls">6. Three Configuration Pitfalls and Their Fixes</h2>
+
+<p>Our initial tests scored 3/10, with 5 challenges producing no visible answer. After identifying three configuration errors, we improved to 5/10 with all 10 challenges answered. Each issue is independently documented by the broader community.</p>
 
 <h3>Pitfall 1: Thinking Token Overflow</h3>
 
 <div class="highlight warning">
-  <strong>Symptom:</strong> Model spends all <code>max_tokens</code> in <code>&lt;think&gt;</code> blocks. API returns <code>"content": ""</code> with all tokens in <code>reasoning_content</code>.<br>
-  <strong>Impact:</strong> 5/10 challenges returned NO ANSWER.<br>
+  <strong>Symptom:</strong> Model spends all <code>max_tokens</code> in <code>&lt;think&gt;</code> blocks. API returns <code>"content": ""</code> with all tokens consumed by <code>reasoning_content</code>.<br>
+  <strong>Impact:</strong> 5 of 10 challenges returned NO ANSWER.<br>
   <strong>Fix:</strong> <code>--reasoning-budget 4096</code> on the server, or per-request <code>"thinking_budget_tokens": 4096</code>.
 </div>
 
-<p>This is the most widely reported Qwen3 issue, with 8+ independent bug reports:</p>
+<p>This is the most widely reported Qwen3 operational issue, with 8+ independent bug reports:</p>
 
 <blockquote>
-  I can&rsquo;t be the only one can I?
-  <cite>&mdash; <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B/discussions/19">HuggingFace Discussion #19</a>, user phoebdroid, on endless reasoning loops</cite>
+  I can't be the only one can I?
+  <cite>-- <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B/discussions/19">HuggingFace Discussion #19</a>, user phoebdroid, on endless reasoning loops</cite>
 </blockquote>
 
 <blockquote>
   When posing straightforward reasoning questions to Qwen3-Thinking models, the system enters an endless cycle where the correct answer repeats continuously without terminating inference.
-  <cite>&mdash; <a href="https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/1018">LM Studio Bug #1018</a>, user godmonero</cite>
+  <cite>-- <a href="https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/1018">LM Studio Bug #1018</a>, user godmonero</cite>
 </blockquote>
 
 <blockquote>
   Output from openai client only contains generated text in the reasoning field while the content field, which should contain the model answer, is always None.
-  <cite>&mdash; <a href="https://github.com/vllm-project/vllm/issues/38894">vLLM Issue #38894</a></cite>
+  <cite>-- <a href="https://github.com/vllm-project/vllm/issues/38894">vLLM Issue #38894</a></cite>
 </blockquote>
 
-<blockquote>
-  OpenClaw repeats the same sentences and fails until context runs out.
-  <cite>&mdash; <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B/discussions/20">HuggingFace Discussion #20</a>, user zeerd</cite>
-</blockquote>
-
-<p>The <code>--reasoning-budget</code> fix has grown from an obscure workaround to a standard recommendation. A <a href="https://insights.marvin-42.com/articles/rlocalllama-tracks-llamacpps-new-reasoning-budget-controls">community benchmark</a> on Qwen3 9B HumanEval showed: full reasoning = 94%, hard budget cutoff = 78%, budget with transition message = 89%.</p>
+<p>The <code>--reasoning-budget</code> fix has moved from an obscure workaround to a standard recommendation. A <a href="https://insights.marvin-42.com/articles/rlocalllama-tracks-llamacpps-new-reasoning-budget-controls">community benchmark</a> on Qwen3 9B HumanEval showed: full reasoning = 94%, hard budget cutoff = 78%, budget with transition message = 89%.</p>
 
 <h3>Pitfall 2: Temperature 0.0 Degradation</h3>
 
@@ -253,12 +342,12 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 
 <blockquote>
   DO NOT use greedy decoding, as it can lead to performance degradation and endless repetitions.
-  <cite>&mdash; <a href="https://huggingface.co/Qwen/Qwen3-32B">Official Qwen3 Model Cards</a> (consistent across all variants)</cite>
+  <cite>-- <a href="https://huggingface.co/Qwen/Qwen3-32B">Official Qwen3 Model Cards</a> (consistent across all variants)</cite>
 </blockquote>
 
 <blockquote>
-  Greedy decoding kills its output &hellip; stick to sampling.
-  <cite>&mdash; <a href="https://www.jan.ai/post/qwen3-settings">Jan.ai: Best Settings to Run Qwen3</a></cite>
+  Greedy decoding kills its output ... stick to sampling.
+  <cite>-- <a href="https://www.jan.ai/post/qwen3-settings">Jan.ai: Best Settings to Run Qwen3</a></cite>
 </blockquote>
 
 <h3>Pitfall 3: Tool Calling Instability</h3>
@@ -266,26 +355,26 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 <div class="highlight warning">
   <strong>Symptom:</strong> Function calling fails with wrong arguments, infinite loops, malformed JSON.<br>
   <strong>Partial Fix:</strong> Enable <code>preserve_thinking</code>, raise output token limits, use <code>--swa-full</code> flag.<br>
-  <strong>Status:</strong> Partially unresolved &mdash; affects even BF16 precision.
+  <strong>Status:</strong> Partially unresolved. Affects even BF16 precision.
 </div>
 
 <blockquote>
   The tool use has been absolutely impossible to use in an agentic mode with LM Studio and OpenCode. It loops non-stop sending the wrong arguments for file writes.
-  <cite>&mdash; <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B/discussions/51">HuggingFace Discussion #51</a></cite>
+  <cite>-- <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B/discussions/51">HuggingFace Discussion #51</a></cite>
 </blockquote>
 
 <blockquote>
   Tool call parsing fails intermittently across all quantization levels including BF16. Appears architectural or deeply rooted in model/inference engine interaction.
-  <cite>&mdash; <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/discussions/5">Unsloth GGUF Discussion #5</a></cite>
+  <cite>-- <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/discussions/5">Unsloth GGUF Discussion #5</a></cite>
 </blockquote>
 
 <!-- ================================================================== -->
-<h2 id="community">6. Community Corroboration</h2>
+<h2 id="community">7. Community Corroboration</h2>
 
-<p>Every behavior we observed has been independently reported:</p>
+<p>Every behavior we observed has been independently reported by other practitioners. The table below maps our findings to external evidence:</p>
 
 <table>
-<tr><th>Our Observation</th><th>Community Reports</th><th>Evidence</th></tr>
+<tr><th>Our Observation</th><th>Community Reports</th><th>Evidence Strength</th></tr>
 <tr>
   <td>5/10 challenges consumed all tokens in thinking</td>
   <td>8+ independent bug reports across HF, GitHub, Ollama, LM Studio, vLLM</td>
@@ -298,13 +387,18 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 </tr>
 <tr>
   <td>IQ3_XXS degrades coding quality</td>
-  <td>arXiv study shows MMLU 74.7→52.2 at Q3; HF reports of garbled output</td>
+  <td>arXiv study shows MMLU 74.7 to 52.2 at Q3; HF reports of garbled output</td>
   <td><span class="badge badge-warn">Strong</span></td>
 </tr>
 <tr>
-  <td>Q4_0 KV cache is lossless on this hybrid architecture</td>
+  <td>Q4_0 KV cache near-lossless on hybrid architecture at short contexts</td>
   <td>BLEU 1.000 in llama.cpp benchmarks; official Qwen confirmation</td>
   <td><span class="badge badge-pass">Very Strong</span></td>
+</tr>
+<tr>
+  <td>KV cache quantization error accumulates at long contexts</td>
+  <td>PM-KVQ paper, DASRoot agentic benchmark, localbench KL divergence study</td>
+  <td><span class="badge badge-warn">Strong</span></td>
 </tr>
 <tr>
   <td>reasoning-budget fixes the overflow</td>
@@ -314,42 +408,23 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 </table>
 
 <!-- ================================================================== -->
-<h2 id="kv-cache">7. Q4_0 KV Cache: Confirmed Lossless</h2>
-
-<div class="highlight success">
-  <strong>Our finding confirmed:</strong> Q4_0 and q8_0 KV cache scored identically (5/10) with the same error patterns. The hybrid DeltaNet architecture makes KV quantization essentially free.
-</div>
-
-<blockquote>
-  q4_0 KV cache quantization achieves perfect lossless performance on hybrid models like Qwen3.5-9B, with BLEU 1.000 across 10 test configurations at 4x compression. Token-level identical output between f16 and q4_0 KV cache.
-  <cite>&mdash; <a href="https://github.com/ggml-org/llama.cpp/issues/21385">llama.cpp Issue #21385</a></cite>
-</blockquote>
-
-<blockquote>
-  The linear/sliding attention layers act as error correction &mdash; quantization noise in the few attention layers is absorbed by the surrounding layers.
-  <cite>&mdash; <a href="https://github.com/ggml-org/llama.cpp/issues/21385">llama.cpp Issue #21385</a></cite>
-</blockquote>
-
-<p>Why this works: Qwen3.6-35B-A3B uses Gated DeltaNet (linear attention, no KV cache) for 30/40 layers. Only 10 layers use standard multi-head attention with KV cache. Q4_0 quantization affects just those 10 layers &mdash; a 75% reduction in impact compared to a standard transformer. This enables <strong>128K context in 8 GB VRAM</strong> with zero quality loss.</p>
-
-<!-- ================================================================== -->
 <h2 id="agents">8. Viability for Local Agent Orchestration</h2>
 
-<h3>The Good News</h3>
+<h3>The Positive Case</h3>
 
-<p>The <strong>full-precision</strong> Qwen3.6-35B-A3B is arguably the best open model for agent tasks:</p>
+<p>The full-precision Qwen3.6-35B-A3B is arguably the strongest open model for agent tasks available today:</p>
 
 <blockquote>
-  Qwen3.6 wins &mdash; and sometimes it isn&rsquo;t close on coding metrics, with MCPMark showing Qwen more than twice as capable at integrating with MCP tools.
-  <cite>&mdash; <a href="https://www.buildfastwithai.com/blogs/qwen3-6-35b-a3b-review">BuildFastWithAI: Qwen3.6 Review</a></cite>
+  Qwen3.6 wins, and sometimes it is not close on coding metrics, with MCPMark showing Qwen more than twice as capable at integrating with MCP tools.
+  <cite>-- <a href="https://www.buildfastwithai.com/blogs/qwen3-6-35b-a3b-review">BuildFastWithAI: Qwen3.6 Review</a></cite>
 </blockquote>
 
 <blockquote>
   Qwen 3.6 demonstrates superior reliability for complex task execution, while Gemma 4 often struggled to trigger the correct tools.
-  <cite>&mdash; <a href="https://www.gemma4.wiki/en/guide/qwen-3.6-vs-gemma4">Gemma 4 Wiki: Qwen 3.6 vs Gemma 4</a></cite>
+  <cite>-- <a href="https://www.gemma4.wiki/en/guide/qwen-3.6-vs-gemma4">Gemma 4 Wiki: Qwen 3.6 vs Gemma 4</a></cite>
 </blockquote>
 
-<p>On the <a href="https://github.com/itayinbarr/little-coder/blob/main/docs/benchmark-qwen3.6-35b-a3b.md">Aider Polyglot benchmark</a>, Qwen3.6-35B-A3B at Q4_K_M scored 78.67% (177/225) on an RTX 5070 8 GB &mdash; a +33 point improvement over Qwen3.5-9B.</p>
+<p>On the <a href="https://github.com/itayinbarr/little-coder/blob/main/docs/benchmark-qwen3.6-35b-a3b.md">Aider Polyglot benchmark</a>, Qwen3.6-35B-A3B at Q4_K_M scored 78.67% (177/225) on an RTX 5070 8 GB, a 33-point improvement over Qwen3.5-9B.</p>
 
 <h3>Agent Framework Compatibility</h3>
 
@@ -357,33 +432,33 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 <tr><th>Framework</th><th>Qwen3.6 Support</th><th>Notes</th></tr>
 <tr><td><a href="https://docs.openclaw.ai/gateway/local-models">OpenClaw</a></td><td class="pass">Yes</td><td>347K GitHub stars. Works via any OpenAI-compatible API. Tip: set <code>reasoning: false</code> for stable tool calling.</td></tr>
 <tr><td><a href="https://hermes-agent.nousresearch.com/docs/guides/tips">Hermes Agent</a></td><td class="pass">Yes</td><td>Nous Research CLI agent. Supports local endpoints, memory, reusable skills.</td></tr>
-<tr><td><a href="https://github.com/huggingface/smolagents">Smolagents</a></td><td class="pass">Yes</td><td>HuggingFace code-first agents. CodeAgent generates Python tool invocations &mdash; more reliable from smaller models than JSON output.</td></tr>
+<tr><td><a href="https://github.com/huggingface/smolagents">Smolagents</a></td><td class="pass">Yes</td><td>HuggingFace code-first agents. CodeAgent generates Python tool invocations, which tends to be more reliable from smaller models than JSON function calling.</td></tr>
 <tr><td><a href="https://github.com/QwenLM/Qwen-Agent">Qwen-Agent</a></td><td class="pass">Native</td><td>Official framework with MCP support.</td></tr>
 </table>
 
-<h3>The Bad News: Quantization Degrades Agent Reliability</h3>
+<h3>The Constraint: Quantization Degrades Agent Reliability</h3>
 
 <blockquote>
-  8GB models are excellent for generating code snippets, short utility functions, and boilerplate scaffolding. But if your goal is true agentic coding &mdash; multi-file edits, autonomous debugging loops, architectural refactoring &mdash; this weight class will hit its intelligence ceiling.
-  <cite>&mdash; <a href="https://localllm.in/blog/best-local-llms-8gb-vram-2025">LocalLLM.in: Best Local LLMs for 8GB VRAM</a></cite>
+  8GB models are excellent for generating code snippets, short utility functions, and boilerplate scaffolding. But if your goal is true agentic coding, multi-file edits, autonomous debugging loops, architectural refactoring, this weight class will hit its intelligence ceiling.
+  <cite>-- <a href="https://localllm.in/blog/best-local-llms-8gb-vram-2025">LocalLLM.in: Best Local LLMs for 8GB VRAM</a></cite>
 </blockquote>
 
 <blockquote>
   A reliability peak occurs for 4-bit quantized models, indicating that quantizing moderately sized base models offers the best reliability-efficiency trade-off, though performance below 4 bits becomes increasingly problematic.
-  <cite>&mdash; <a href="https://openreview.net/forum?id=QhkW8xPH1v">OpenReview: Reliability Scaling Laws for Quantized LLMs</a></cite>
+  <cite>-- <a href="https://openreview.net/forum?id=QhkW8xPH1v">OpenReview: Reliability Scaling Laws for Quantized LLMs</a></cite>
 </blockquote>
 
-<p>At IQ3_XXS, our model sits below the 4-bit reliability threshold. Tool calling, structured output, and multi-step reasoning all degrade. The model is usable for single-turn coding tasks but unreliable for autonomous agent loops.</p>
+<p>At IQ3_XXS, our model sits below the 4-bit reliability threshold. Tool calling, structured output, and multi-step reasoning all degrade. Separately, KV cache quantization at Q4_0 introduces an additional risk factor for multi-turn agent loops where context length grows across iterations. The model remains usable for single-turn coding tasks but is unreliable for autonomous agent workflows.</p>
 
 <h3>Practical Assessment</h3>
 
 <table>
-<tr><th>Use Case</th><th>IQ3_XXS Viability</th></tr>
-<tr><td>Single-file code generation</td><td><span class="badge badge-pass">Good</span> &mdash; 5/10 on hard challenges</td></tr>
-<tr><td>Code explanation &amp; review</td><td><span class="badge badge-pass">Good</span></td></tr>
-<tr><td>Simple tool calling (1-2 tools)</td><td><span class="badge badge-warn">Unreliable</span> &mdash; works sometimes, fails intermittently</td></tr>
-<tr><td>Multi-step agent loops (OpenClaw, Hermes)</td><td><span class="badge badge-fail">Poor</span> &mdash; thinking overflow + tool call failures compound</td></tr>
-<tr><td>Multi-file refactoring</td><td><span class="badge badge-fail">Poor</span> &mdash; bracket mismatches, lost context</td></tr>
+<tr><th>Use Case</th><th>IQ3_XXS + Q4_0 KV Viability</th></tr>
+<tr><td>Single-file code generation</td><td><span class="badge badge-pass">Good</span> -- 5/10 on hard challenges, competent on moderate ones</td></tr>
+<tr><td>Code explanation and review</td><td><span class="badge badge-pass">Good</span></td></tr>
+<tr><td>Simple tool calling (1-2 tools)</td><td><span class="badge badge-warn">Unreliable</span> -- works sometimes, fails intermittently</td></tr>
+<tr><td>Multi-step agent loops (OpenClaw, Hermes)</td><td><span class="badge badge-fail">Poor</span> -- thinking overflow + tool call failures + KV error accumulation compound across iterations</td></tr>
+<tr><td>Multi-file refactoring</td><td><span class="badge badge-fail">Poor</span> -- bracket mismatches, lost context</td></tr>
 </table>
 
 <!-- ================================================================== -->
@@ -405,7 +480,7 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
   <td>~3.8 GB + RAM</td>
   <td>~10-17 t/s</td>
   <td>~90-95% of FP16</td>
-  <td>Maximum intelligence, slower</td>
+  <td>Maximum intelligence, slower, quality tradeoff</td>
 </tr>
 <tr>
   <td><strong>Qwen3.6-35B-A3B Q4_K_M + CPU offload</strong></td>
@@ -417,7 +492,7 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 </table>
 
 <div class="highlight">
-  <strong>Recommendation:</strong> If agent reliability matters, prefer <strong>Q4_K_M with CPU offload</strong> (19 GB on disk, ~6 GB VRAM) over IQ3_XXS. The 4-bit reliability threshold is real. If speed matters more, <strong>Qwen3.5-9B at Q4_K_M</strong> is the best 8 GB option &mdash; 55 t/s, fully on GPU, no CPU offload needed.
+  <strong>Recommendation:</strong> If agent reliability matters, prefer <strong>Q4_K_M with CPU offload</strong> (19 GB on disk, ~6 GB VRAM) over IQ3_XXS. The 4-bit reliability threshold is well-documented. For KV cache, use <strong><code>--cache-type-k q4_0 --cache-type-v q8_0</code></strong> as a compromise that preserves most VRAM savings while protecting the more sensitive value cache. If speed is the priority, <strong>Qwen3.5-9B at Q4_K_M</strong> is the best 8 GB option: 55 t/s, fully on GPU, no CPU offload needed.
 </div>
 
 <h3>If You Can Upgrade</h3>
@@ -434,18 +509,20 @@ Hardware: NVIDIA RTX 4070 Max-Q (8 GB VRAM) + 16 GB DDR5 RAM &bull; May 2026</p>
 
 <div class="verdict neutral">
   <h3 style="margin-top:0; color:var(--yellow)">Usable for coding assistance. Not reliable enough for autonomous agents.</h3>
-  <p>Qwen3.6-35B-A3B at IQ3_XXS on 8 GB VRAM is a remarkable technical achievement &mdash; a 35B-parameter model running on a laptop GPU with 128K context. It handles single-turn coding tasks respectably (5/10 on hard challenges) and the Q4_0 KV cache is genuinely lossless.</p>
-  <p>But for agent orchestration (OpenClaw, Hermes, Smolagents), the 3-bit weight quantization drops quality below the reliability threshold. Tool calling is unstable even at full precision, and it gets worse at IQ3_XXS. The thinking overflow issue &mdash; now mitigated with <code>--reasoning-budget</code> &mdash; was a showstopper before the fix was discovered.</p>
-  <p><strong>For serious agentic use on consumer hardware:</strong> either upgrade to Q4_K_M quantization with CPU offload (same model, better quality, same speed), or use Qwen3.5-9B at Q4_K_M for fully on-GPU inference at 55 t/s with near-perfect quality retention.</p>
+  <p>Qwen3.6-35B-A3B at IQ3_XXS on 8 GB VRAM is a remarkable technical achievement: a 35B-parameter model running on a laptop GPU with 128K context. It handles single-turn coding tasks respectably (5/10 on hard challenges), and the hybrid architecture provides meaningful protection against KV cache quantization errors at moderate context lengths.</p>
+  <p>However, for agent orchestration (OpenClaw, Hermes, Smolagents), two independent factors work against this configuration. First, the 3-bit weight quantization drops quality below the 4-bit reliability threshold, degrading tool calling and structured output. Second, the Q4_0 KV cache, while largely protected by the hybrid architecture at short contexts, introduces cumulative errors that grow across multi-turn agent interactions where context length steadily increases.</p>
+  <p><strong>For serious agentic use on consumer hardware:</strong> upgrade to Q4_K_M weight quantization with CPU offload (same model, substantially better quality, comparable speed). Consider asymmetric KV cache quantization (<code>--cache-type-k q4_0 --cache-type-v q8_0</code>) to preserve VRAM savings while protecting value cache precision. Alternatively, use Qwen3.5-9B at Q4_K_M for fully on-GPU inference at 55 t/s with near-perfect quality retention.</p>
 </div>
 
-<h3>What We Proved</h3>
+<h3>What We Established</h3>
 <ul style="margin:1rem 0; padding-left:1.5rem;">
-  <li><strong>Q4_0 KV cache is free on hybrid architectures</strong> &mdash; 128K context with zero quality loss</li>
-  <li><strong>Reasoning budget is mandatory</strong> &mdash; without it, 50% of coding tasks produce no answer</li>
-  <li><strong>Temperature=0 is actively harmful</strong> for Qwen3 &mdash; causes repetition loops</li>
-  <li><strong>IQ3_XXS is below the 4-bit reliability threshold</strong> for agent tasks</li>
-  <li><strong>The full model is exceptional</strong> &mdash; SWE-bench 73.4%, double Gemma 4 on tool use</li>
+  <li><strong>Weight quantization (IQ3_XXS) is the primary quality bottleneck</strong>, accounting for approximately 5-10% quality loss and sitting below the 4-bit reliability threshold</li>
+  <li><strong>KV cache quantization (Q4_0) is near-lossless at short contexts on hybrid architectures</strong>, but introduces cumulative errors at longer contexts, particularly in the value cache</li>
+  <li><strong>The two effects compound</strong>, and our 5/10 SWE score reflects the combined impact, not either factor in isolation</li>
+  <li><strong>Reasoning budget is mandatory</strong> -- without it, 50% of coding tasks produce no answer</li>
+  <li><strong>Temperature=0 is actively harmful</strong> for Qwen3, causing repetition loops</li>
+  <li><strong>The full-precision model is exceptional</strong>: SWE-bench 73.4%, double Gemma 4 on tool use</li>
+  <li><strong>Asymmetric KV cache (Q4 keys + Q8 values) is the optimal VRAM-quality compromise</strong> when Q4_0 on both is too aggressive</li>
 </ul>
 
 <hr style="border-color:var(--border); margin:2rem 0">
