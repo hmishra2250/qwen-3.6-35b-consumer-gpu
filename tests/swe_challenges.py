@@ -783,58 +783,71 @@ def main():
     log(f"=== SWE Challenge Suite: {label} ===")
     log(f"Running {len(CHALLENGES)} challenges\n")
 
+    max_retries = int(os.environ.get("MAX_RETRIES", "3"))
+
     for i, ch in enumerate(CHALLENGES):
         log(f"[{i+1}/{len(CHALLENGES)}] {ch['name']}...")
 
-        resp = send_prompt(ch["prompt"])
+        best_result = None
+        for attempt in range(1, max_retries + 1):
+            if attempt > 1:
+                log(f"  Retry {attempt}/{max_retries}...")
 
-        if "error" in resp:
-            log(f"  API ERROR: {str(resp['error'])[:200]}")
-            results.append({
-                "id": ch["id"], "name": ch["name"], "tokens": 0,
-                "elapsed": resp["elapsed"], "has_answer": False,
-                "passed": False, "output": f"API error: {resp['error']}",
-                "content": "",
-            })
-            continue
+            resp = send_prompt(ch["prompt"])
 
-        content = resp["content"]
-        visible = re.sub(r"<thought>.*?</thought>", "", content, flags=re.DOTALL).strip() if content else ""
-        has_answer = bool(visible)
+            if "error" in resp:
+                log(f"  API ERROR: {str(resp['error'])[:200]}")
+                best_result = {
+                    "id": ch["id"], "name": ch["name"], "tokens": 0,
+                    "elapsed": resp["elapsed"], "has_answer": False,
+                    "passed": False, "output": f"API error: {resp['error']}",
+                    "content": "", "attempts": attempt,
+                }
+                continue
 
-        if not has_answer:
-            log(f"  {resp['tokens']} tok, {resp['elapsed']:.0f}s — NO ANSWER (all thinking)")
-            results.append({
-                "id": ch["id"],
-                "name": ch["name"],
-                "tokens": resp["tokens"],
-                "elapsed": resp["elapsed"],
-                "has_answer": False,
-                "passed": False,
-                "output": "All tokens consumed by thinking",
-                "content": "",
-                "reasoning_preview": resp.get("reasoning", "")[:500],
-            })
-            continue
+            content = resp["content"]
+            visible = re.sub(r"<thought>.*?</thought>", "", content, flags=re.DOTALL).strip() if content else ""
+            has_answer = bool(visible)
 
-        code = extract_code(content)
-        passed, output = run_test(code, ch["test_code"])
+            if not has_answer:
+                log(f"  {resp['tokens']} tok, {resp['elapsed']:.0f}s — NO ANSWER (all thinking)")
+                best_result = {
+                    "id": ch["id"], "name": ch["name"],
+                    "tokens": resp["tokens"], "elapsed": resp["elapsed"],
+                    "has_answer": False, "passed": False,
+                    "output": "All tokens consumed by thinking",
+                    "content": "",
+                    "reasoning_preview": resp.get("reasoning", "")[:500],
+                    "attempts": attempt,
+                }
+                continue
 
-        status = "PASS" if passed else "FAIL"
-        log(f"  {resp['tokens']} tok, {resp['elapsed']:.0f}s — {status}")
-        if not passed:
-            log(f"  Output: {output[:300]}")
+            code = extract_code(content)
+            passed, output = run_test(code, ch["test_code"])
 
-        results.append({
-            "id": ch["id"],
-            "name": ch["name"],
-            "tokens": resp["tokens"],
-            "elapsed": resp["elapsed"],
-            "has_answer": True,
-            "passed": passed,
-            "output": output,
-            "content": content,
-        })
+            if passed:
+                log(f"  {resp['tokens']} tok, {resp['elapsed']:.0f}s — PASS" + (f" (attempt {attempt})" if attempt > 1 else ""))
+                best_result = {
+                    "id": ch["id"], "name": ch["name"],
+                    "tokens": resp["tokens"], "elapsed": resp["elapsed"],
+                    "has_answer": True, "passed": True,
+                    "output": output, "content": content,
+                    "attempts": attempt,
+                }
+                break
+
+            log(f"  {resp['tokens']} tok, {resp['elapsed']:.0f}s — FAIL")
+            if not passed:
+                log(f"  Output: {output[:300]}")
+            best_result = {
+                "id": ch["id"], "name": ch["name"],
+                "tokens": resp["tokens"], "elapsed": resp["elapsed"],
+                "has_answer": True, "passed": False,
+                "output": output, "content": content,
+                "attempts": attempt,
+            }
+
+        results.append(best_result)
 
     # Summary
     total = len(results)
